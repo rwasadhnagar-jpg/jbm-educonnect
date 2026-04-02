@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authenticateToken } from '../middleware/auth.js'
 import { requireRole } from '../middleware/role.js'
 import supabase from '../db/supabase.js'
-import { createMeetSpace } from '../services/googlemeet.js'
+import { createJitsiRoom } from '../services/jitsi.js'
 import { sendPushToClass } from '../services/fcm.js'
 
 const router = Router()
@@ -38,20 +38,11 @@ router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req,
     if (new Date(end_time) <= new Date(start_time))
       return res.status(400).json({ error: 'end_time must be after start_time' })
 
-    // Create a Google Meet space using the teacher's Workspace email
+    // Generate Jitsi Meet room (free, no account required)
     let meet_uri = null
     let meet_space_name = null
-    try {
-      const { data: teacher } = await supabase.from('users').select('email').eq('id', req.user.id).single()
-      if (teacher?.email) {
-        const space = await createMeetSpace(teacher.email)
-        meet_uri = space.meetingUri
-        meet_space_name = space.spaceName
-      }
-    } catch (meetErr) {
-      console.warn('Google Meet space creation failed, session saved without Meet link:', meetErr.message)
-    }
 
+    // Insert first to get the session ID, then generate Jitsi room from it
     const { data, error } = await supabase.from('sessions').insert({
       title,
       class_group_id,
@@ -62,6 +53,13 @@ router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req,
       meet_space_name,
       status: 'scheduled'
     }).select().single()
+
+    if (!error && data) {
+      const { meetUrl, roomName } = createJitsiRoom(data.id)
+      await supabase.from('sessions').update({ meet_uri: meetUrl, meet_space_name: roomName }).eq('id', data.id)
+      data.meet_uri = meetUrl
+      data.meet_space_name = roomName
+    }
 
     if (error) throw error
 
@@ -83,7 +81,7 @@ router.patch('/:id/start', authenticateToken, requireRole('teacher', 'admin'), a
     const { data, error } = await supabase.from('sessions').update({ status: 'live' }).eq('id', req.params.id).select().single()
     if (error) throw error
 
-    sendPushToClass(session.class_group_id, `Session is LIVE: ${session.title}`, 'Join now in Google Meet!').catch(() => {})
+    sendPushToClass(session.class_group_id, `Session is LIVE: ${session.title}`, 'Join now on Jitsi Meet!').catch(() => {})
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to start session' })
@@ -120,7 +118,7 @@ router.post('/:id/join', authenticateToken, requireRole('student', 'teacher'), a
       return res.status(403).json({ error: 'You are not enrolled in this class' })
 
     if (!session.meet_uri)
-      return res.status(503).json({ error: 'Google Meet link not available for this session' })
+      return res.status(503).json({ error: 'Jitsi Meet link not available for this session' })
 
     res.json({ meetUrl: session.meet_uri })
   } catch (err) {

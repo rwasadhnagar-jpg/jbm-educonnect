@@ -1,6 +1,4 @@
-// Renamed to GoogleMeetLauncher — kept same filename so no import changes needed
-
-export default function GoogleMeetLauncher({ meetUrl, onClose }) {
+export default function JitsiLauncher({ meetUrl, onClose }) {
   const handleOpen = () => {
     window.open(meetUrl, '_blank', 'noopener,noreferrer')
   }
@@ -9,20 +7,21 @@ export default function GoogleMeetLauncher({ meetUrl, onClose }) {
     <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center">
         <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none">
-            <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.96-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z" fill="#FF0000"/>
-            <polygon points="9.75,15.02 15.5,12 9.75,8.98 9.75,15.02" fill="white"/>
+          <svg viewBox="0 0 48 48" className="w-8 h-8" fill="none">
+            <rect width="48" height="48" rx="12" fill="#1565C0"/>
+            <path d="M12 18h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="white"/>
+            <path d="M30 22l8-4v12l-8-4v-4z" fill="white"/>
           </svg>
         </div>
-        <h3 className="text-xl font-bold text-textMain mb-2">Join Google Meet</h3>
+        <h3 className="text-xl font-bold text-textMain mb-2">Join Jitsi Meet</h3>
         <p className="text-sm text-muted mb-6">
-          Your session is live. Click below to open Google Meet. Sign in with your school Google account.
+          Your session is live. Click below to open Jitsi Meet in a new tab. No account required.
         </p>
         <button
           onClick={handleOpen}
           className="w-full bg-primary text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors mb-3"
         >
-          Open Google Meet
+          Open Jitsi Meet
         </button>
         <button
           onClick={onClose}
