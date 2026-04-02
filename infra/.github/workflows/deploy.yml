@@ -1,0 +1,72 @@
+name: Deploy JBM EduConnect
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install client deps
+        working-directory: client
+        run: npm ci
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Build client
+        working-directory: client
+        env:
+          VITE_API_URL: https://placeholder.railway.app
+          VITE_FIREBASE_API_KEY: placeholder
+          VITE_FIREBASE_AUTH_DOMAIN: placeholder.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: placeholder
+          VITE_FIREBASE_STORAGE_BUCKET: placeholder.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "123"
+          VITE_FIREBASE_APP_ID: "1:123:web:abc"
+          VITE_FIREBASE_VAPID_KEY: placeholder
+        run: npm run build
+
+  deploy-frontend:
+    name: Deploy Frontend → Vercel
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g vercel@latest
+      - name: Deploy
+        working-directory: client
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+
+  deploy-backend:
+    name: Deploy Backend → Railway
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g @railway/cli
+      - name: Deploy
+        working-directory: server
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service jbm-educonnect-backend --detach
