@@ -9,6 +9,7 @@ import CreateHomework from './pages/CreateHomework'
 import ScheduleSession from './pages/ScheduleSession'
 import AdminPanel from './pages/AdminPanel'
 import ParentDashboard from './pages/ParentDashboard'
+import Settings from './pages/Settings'
 import Navbar from './components/Navbar'
 import { useEffect } from 'react'
 import { requestNotificationPermission } from './utils/notifications'
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/sessions/schedule" element={<PrivateRoute roles={['teacher']}><Navbar /><ScheduleSession /></PrivateRoute>} />
           <Route path="/admin" element={<PrivateRoute roles={['admin']}><Navbar /><AdminPanel /></PrivateRoute>} />
           <Route path="/parent" element={<PrivateRoute roles={['parent']}><Navbar /><ParentDashboard /></PrivateRoute>} />
+          <Route path="/settings" element={<PrivateRoute><Navbar /><Settings /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

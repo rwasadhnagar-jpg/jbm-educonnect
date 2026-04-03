@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS class_groups (
   id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   school_id  UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
-  grade      INT NOT NULL CHECK (grade BETWEEN 1 AND 12),
+  grade      INT NOT NULL CHECK (grade BETWEEN -1 AND 12),  -- -1=Nursery, 0=Prep, 1-12=Class 1-12
   section    TEXT NOT NULL DEFAULT 'A',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (school_id, grade, section)
@@ -148,3 +148,26 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER users_updated_at    BEFORE UPDATE ON users    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER homework_updated_at BEFORE UPDATE ON homework FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ============================================================
+-- ANNOUNCEMENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS announcements (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  school_id             UUID REFERENCES schools(id) ON DELETE CASCADE,
+  title                 TEXT NOT NULL,
+  message               TEXT NOT NULL,
+  target_class_group_id UUID REFERENCES class_groups(id) ON DELETE SET NULL,
+  created_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_school ON announcements(school_id);
+CREATE INDEX IF NOT EXISTS idx_announcements_class  ON announcements(target_class_group_id);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE homework ADD COLUMN IF NOT EXISTS subject TEXT;
+ALTER TABLE homework ADD COLUMN IF NOT EXISTS max_marks INT;
+ALTER TABLE homework ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Homework' CHECK (category IN ('Homework','Classwork','Project','Test'));

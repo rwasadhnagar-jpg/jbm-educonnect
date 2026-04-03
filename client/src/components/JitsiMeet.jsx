@@ -22,14 +22,14 @@ export default function JitsiEmbed({ meetUrl, userRole, displayName, onClose }) 
         userInfo: { displayName: displayName || 'Participant' },
         configOverwrite: {
           disableDesktopSharing: isStudent,
-          startWithVideoMuted: false,
+          startWithVideoMuted: isStudent,
           startWithAudioMuted: false,
           prejoinPageEnabled: false,
           disableDeepLinking: true,
         },
         interfaceConfigOverwrite: {
           TOOLBAR_BUTTONS: isStudent
-            ? ['microphone', 'camera', 'chat', 'raisehand', 'tileview', 'hangup']
+            ? ['microphone', 'chat', 'raisehand', 'tileview', 'hangup']
             : ['microphone', 'camera', 'desktop', 'chat', 'raisehand', 'tileview', 'participants-pane', 'mute-everyone', 'hangup'],
           SHOW_JITSI_WATERMARK: false,
           SHOW_WATERMARK_FOR_GUESTS: false,

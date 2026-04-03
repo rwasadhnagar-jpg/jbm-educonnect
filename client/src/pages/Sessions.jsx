@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../api/client'
 import SessionCard from '../components/SessionCard'
-import GoogleMeetLauncher from '../components/JitsiMeet'
+import JitsiEmbed from '../components/JitsiMeet'
 import { useAuth } from '../context/AuthContext'
 
 export default function Sessions() {
@@ -39,8 +39,10 @@ export default function Sessions() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
       {activeSession && (
-        <GoogleMeetLauncher
+        <JitsiEmbed
           meetUrl={activeSession.meetUrl}
+          userRole={user?.role}
+          displayName={user?.full_name}
           onClose={() => setActiveSession(null)}
         />
       )}

@@ -147,4 +147,52 @@ router.post('/bulk', authenticateToken, requireRole('admin'), async (req, res) =
   }
 })
 
+// Edit user details
+router.patch('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { full_name, email, class_group_id, role, is_active } = req.body
+    const updates = {}
+    if (full_name !== undefined) updates.full_name = full_name
+    if (email !== undefined) updates.email = email || null
+    if (class_group_id !== undefined) updates.class_group_id = class_group_id || null
+    if (role !== undefined) updates.role = role
+    if (is_active !== undefined) updates.is_active = is_active
+    const { data, error } = await supabase.from('users').update(updates).eq('id', req.params.id)
+      .select('id, username, full_name, email, role, class_group_id, is_active').single()
+    if (error) throw error
+    res.json(data)
+  } catch {
+    res.status(500).json({ error: 'Failed to update user' })
+  }
+})
+
+// Delete user
+router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { error } = await supabase.from('users').delete().eq('id', req.params.id)
+    if (error) throw error
+    res.json({ message: 'User deleted' })
+  } catch {
+    res.status(500).json({ error: 'Failed to delete user' })
+  }
+})
+
+// Bulk password reset for a class
+router.post('/class/:classId/reset-password', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { password } = req.body
+    if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    const password_hash = await bcrypt.hash(password, 12)
+    const { data, error } = await supabase.from('users')
+      .update({ password_hash })
+      .eq('class_group_id', req.params.classId)
+      .eq('role', 'student')
+      .select('id')
+    if (error) throw error
+    res.json({ message: `Reset passwords for ${data?.length || 0} students` })
+  } catch {
+    res.status(500).json({ error: 'Failed to reset passwords' })
+  }
+})
+
 export default router

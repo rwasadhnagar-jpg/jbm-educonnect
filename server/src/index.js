@@ -10,6 +10,7 @@ import quizRoutes from './routes/quiz.js'
 import sessionRoutes from './routes/sessions.js'
 import userRoutes from './routes/users.js'
 import notificationRoutes from './routes/notifications.js'
+import announcementRoutes from './routes/announcements.js'
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -36,6 +37,7 @@ app.use('/api/quiz', quizRoutes)
 app.use('/api/sessions', sessionRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/announcements', announcementRoutes)
 
 app.use((err, req, res, next) => {
   console.error(err.stack)

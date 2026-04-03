@@ -4,7 +4,7 @@ import api from '../api/client'
 
 export default function CreateHomework() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ title: '', description: '', type: 'text', due_date: '', class_group_id: '' })
+  const [form, setForm] = useState({ title: '', description: '', type: 'text', due_date: '', class_group_id: '', subject: '', max_marks: '', category: 'Homework' })
   const [classGroups, setClassGroups] = useState([])
   const [file, setFile] = useState(null)
   const [questions, setQuestions] = useState([{ question_text: '', options: ['', '', '', ''], correct_option: 0 }])
@@ -59,16 +59,33 @@ export default function CreateHomework() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-              <option value="text">Text</option>
-              <option value="pdf">PDF</option>
-              <option value="quiz">Quiz (MCQ)</option>
+            <label className="block text-sm font-medium mb-1">Subject</label>
+            <input type="text" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Mathematics, English" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Category</label>
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+              <option value="Homework">Homework</option>
+              <option value="Classwork">Classwork</option>
+              <option value="Project">Project</option>
+              <option value="Test">Test / Exam</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Max Marks</label>
+            <input type="number" value={form.max_marks} onChange={(e) => setForm({ ...form, max_marks: e.target.value })} min="1" placeholder="e.g. 10, 25, 100" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Due Date</label>
             <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} required className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Type</label>
+            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+              <option value="text">Text</option>
+              <option value="pdf">PDF Attachment</option>
+              <option value="quiz">Quiz (MCQ)</option>
+            </select>
           </div>
         </div>
         {form.type === 'pdf' && (

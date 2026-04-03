@@ -32,7 +32,7 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-8">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-white text-2xl font-bold shadow-lg mb-4">JBM</div>
+          <img src="/logo.png" alt="JBM Public School" className="w-24 h-24 object-contain mb-3 drop-shadow-md" />
           <h1 className="text-xl font-bold text-textMain text-center">JBM Public School</h1>
           <p className="text-muted text-sm text-center mt-1">Nasirpur</p>
         </div>
