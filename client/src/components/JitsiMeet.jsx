@@ -1,35 +1,70 @@
-export default function JitsiLauncher({ meetUrl, onClose }) {
-  const handleOpen = () => {
-    window.open(meetUrl, '_blank', 'noopener,noreferrer')
-  }
+import { useEffect, useRef } from 'react'
+
+export default function JitsiEmbed({ meetUrl, userRole, displayName, onClose }) {
+  const containerRef = useRef(null)
+  const apiRef = useRef(null)
+
+  useEffect(() => {
+    const roomName = meetUrl.replace('https://meet.jit.si/', '')
+    const isStudent = userRole === 'student'
+
+    const script = document.createElement('script')
+    script.src = 'https://meet.jit.si/external_api.js'
+    script.async = true
+    script.onload = () => {
+      if (!containerRef.current) return
+
+      apiRef.current = new window.JitsiMeetExternalAPI('meet.jit.si', {
+        roomName,
+        parentNode: containerRef.current,
+        width: '100%',
+        height: '100%',
+        userInfo: { displayName: displayName || 'Participant' },
+        configOverwrite: {
+          disableDesktopSharing: isStudent,
+          startWithVideoMuted: false,
+          startWithAudioMuted: false,
+          prejoinPageEnabled: false,
+          disableDeepLinking: true,
+        },
+        interfaceConfigOverwrite: {
+          TOOLBAR_BUTTONS: isStudent
+            ? ['microphone', 'camera', 'chat', 'raisehand', 'tileview', 'hangup']
+            : ['microphone', 'camera', 'desktop', 'chat', 'raisehand', 'tileview', 'participants-pane', 'mute-everyone', 'hangup'],
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          MOBILE_APP_PROMO: false,
+          DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
+        },
+      })
+
+      apiRef.current.addEventListener('readyToClose', onClose)
+    }
+
+    document.head.appendChild(script)
+
+    return () => {
+      if (apiRef.current) {
+        apiRef.current.dispose()
+        apiRef.current = null
+      }
+      document.querySelectorAll('script[src="https://meet.jit.si/external_api.js"]')
+        .forEach(s => s.remove())
+    }
+  }, [meetUrl, userRole])
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center">
-        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg viewBox="0 0 48 48" className="w-8 h-8" fill="none">
-            <rect width="48" height="48" rx="12" fill="#1565C0"/>
-            <path d="M12 18h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" fill="white"/>
-            <path d="M30 22l8-4v12l-8-4v-4z" fill="white"/>
-          </svg>
-        </div>
-        <h3 className="text-xl font-bold text-textMain mb-2">Join Jitsi Meet</h3>
-        <p className="text-sm text-muted mb-6">
-          Your session is live. Click below to open Jitsi Meet in a new tab. No account required.
-        </p>
-        <button
-          onClick={handleOpen}
-          className="w-full bg-primary text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors mb-3"
-        >
-          Open Jitsi Meet
-        </button>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 text-white text-sm shrink-0">
+        <span className="font-semibold">Live Session</span>
         <button
           onClick={onClose}
-          className="w-full text-sm text-muted hover:text-textMain transition-colors"
+          className="text-gray-400 hover:text-white transition-colors px-3 py-1 rounded hover:bg-gray-700"
         >
-          Cancel
+          Leave ✕
         </button>
       </div>
+      <div ref={containerRef} className="flex-1 w-full" />
     </div>
   )
 }
