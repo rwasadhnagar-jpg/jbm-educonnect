@@ -111,7 +111,7 @@ router.post('/bulk', authenticateToken, requireRole('admin'), async (req, res) =
     if (!default_password || default_password.length < 8) return res.status(400).json({ error: 'Default password must be at least 8 characters' })
 
     const { data: school } = await supabase.from('schools').select('id').limit(1).single()
-    const password_hash = await bcrypt.hash(default_password, 12)
+    const defaultHash = await bcrypt.hash(default_password, 12)
 
     const results = { created: [], failed: [] }
 
@@ -120,6 +120,9 @@ router.post('/bulk', authenticateToken, requireRole('admin'), async (req, res) =
         results.failed.push({ username: u.username || '?', reason: 'Missing required fields' })
         continue
       }
+      const password_hash = u.password && u.password.length >= 8
+        ? await bcrypt.hash(u.password, 12)
+        : defaultHash
       const { data, error } = await supabase.from('users').insert({
         username: String(u.username).trim().toLowerCase(),
         full_name: String(u.full_name).trim(),
