@@ -28,13 +28,60 @@ router.get('/class-groups', authenticateToken, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('class_groups')
-      .select('id, name, grade, section')
+      .select('id, name, grade, section, code')
       .order('grade')
       .order('section')
     if (error) throw error
     res.json(data || [])
   } catch {
     res.status(500).json({ error: 'Failed to fetch class groups' })
+  }
+})
+
+// Bulk import class groups from Excel
+router.post('/class-groups/bulk', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { classes } = req.body
+    if (!Array.isArray(classes) || classes.length === 0)
+      return res.status(400).json({ error: 'No classes provided' })
+
+    const { data: school } = await supabase.from('schools').select('id').limit(1).single()
+    if (!school) return res.status(400).json({ error: 'No school found' })
+
+    const results = { created: [], failed: [] }
+
+    for (const c of classes) {
+      const name = String(c.class_name || c.name || '').trim()
+      const code = String(c.code || '').trim()
+      if (!name) { results.failed.push({ name: code || '?', reason: 'Missing class name' }); continue }
+
+      // Parse grade and section from name
+      let grade, section
+      if (name.toLowerCase().startsWith('nursery')) {
+        grade = -1
+        section = name.includes(' - ') ? name.split(' - ')[1].trim() : 'A'
+      } else if (name.toLowerCase().startsWith('prep')) {
+        grade = 0
+        section = name.includes(' - ') ? name.split(' - ')[1].trim() : 'A'
+      } else {
+        const m = name.match(/^class\s+(\d+)\s+-\s+(.+)$/i)
+        if (!m) { results.failed.push({ name, reason: 'Cannot parse class name' }); continue }
+        grade = parseInt(m[1])
+        section = m[2].trim()
+      }
+
+      const { data, error } = await supabase.from('class_groups').upsert({
+        school_id: school.id, name, grade, section, code: code || null
+      }, { onConflict: 'school_id,grade,section' }).select('id, name, grade, section, code').single()
+
+      if (error) results.failed.push({ name, reason: error.message })
+      else results.created.push(data)
+    }
+
+    res.status(201).json(results)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Bulk class import failed' })
   }
 })
 

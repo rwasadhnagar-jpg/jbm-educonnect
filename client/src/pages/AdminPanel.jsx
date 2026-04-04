@@ -37,6 +37,10 @@ export default function AdminPanel() {
   // Classes state
   const [selectedClass, setSelectedClass] = useState('')
   const [bulkPwdClass, setBulkPwdClass] = useState('')
+  const [classImportRows, setClassImportRows] = useState([])
+  const [classImportLoading, setClassImportLoading] = useState(false)
+  const [classImportResult, setClassImportResult] = useState(null)
+  const classFileRef = useRef()
 
   // Bulk import state
   const [bulkRows, setBulkRows] = useState([])
@@ -223,6 +227,40 @@ export default function AdminPanel() {
   }
 
   // ── Bulk Import Actions ──
+  const handleClassFileUpload = (e) => {
+    const file = e.target.files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const wb = XLSX.read(ev.target.result, { type: 'binary' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+      const normalized = rows.map(row => {
+        const n = {}
+        Object.entries(row).forEach(([k, v]) => { n[k.toLowerCase().trim().replace(/\s+/g, '_')] = String(v).trim() })
+        return {
+          class_name: n.class_name || n.name || n['class name'] || '',
+          code: n.code || ''
+        }
+      }).filter(r => r.class_name)
+      setClassImportRows(normalized); setClassImportResult(null)
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  const handleClassImport = async () => {
+    if (!classImportRows.length) return
+    setClassImportLoading(true); setClassImportResult(null)
+    try {
+      const { data } = await api.post('/api/users/class-groups/bulk', { classes: classImportRows })
+      setClassImportResult(data)
+      if (data.created.length) {
+        const { data: cg } = await api.get('/api/users/class-groups')
+        setClassGroups(cg || [])
+      }
+    } catch (err) { alert(err.response?.data?.error || 'Class import failed') }
+    finally { setClassImportLoading(false) }
+  }
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0]; if (!file) return
     const reader = new FileReader()
@@ -234,13 +272,18 @@ export default function AdminPanel() {
         const n = {}
         Object.entries(row).forEach(([k, v]) => { n[k.toLowerCase().trim().replace(/\s+/g, '_')] = String(v).trim() })
         const classLabel = n.class || n.class_group || ''
+        // Match by full name OR by code
+        const matchedGroup = classGroups.find(g =>
+          g.name.toLowerCase() === classLabel.toLowerCase() ||
+          (g.code && g.code.toLowerCase() === classLabel.toLowerCase())
+        )
         return {
           full_name: n.full_name || n.name || '',
           username: n.username || '',
           password: n.password || '',
           email: n.email || '',
           role: (n.role || 'student').toLowerCase(),
-          class_group_id: classGroups.find(g => g.name.toLowerCase() === classLabel.toLowerCase())?.id || '',
+          class_group_id: matchedGroup?.id || '',
           class_label: classLabel
         }
       }).filter(r => r.full_name || r.username)
@@ -434,7 +477,58 @@ export default function AdminPanel() {
         {/* ══ CLASSES ══ */}
         {section === 'classes' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-textMain">Class View</h2>
+            <h2 className="text-xl font-bold text-textMain">Classes <span className="text-muted font-normal text-base">({classGroups.length} total)</span></h2>
+
+            {/* Class Import from Excel */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Import Classes from Excel</h3>
+                <span className="text-xs text-muted">Columns: <code className="bg-gray-100 px-1 rounded">Class Name, Code</code></span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Upload File (.xlsx or .csv)</label>
+                <input ref={classFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleClassFileUpload}
+                  className="text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-green-600 file:text-white file:text-sm file:cursor-pointer" />
+              </div>
+              {classImportRows.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{classImportRows.length} classes ready to import</p>
+                    <button onClick={handleClassImport} disabled={classImportLoading}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors">
+                      {classImportLoading ? 'Importing...' : `Import ${classImportRows.length} Classes`}
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-muted text-xs uppercase">
+                        <tr><th className="px-4 py-2 text-left">Class Name</th><th className="px-4 py-2 text-left">Code</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {classImportRows.slice(0, 10).map((r, i) => (
+                          <tr key={i}><td className="px-4 py-2">{r.class_name}</td><td className="px-4 py-2 text-muted">{r.code || '—'}</td></tr>
+                        ))}
+                        {classImportRows.length > 10 && <tr><td colSpan={2} className="px-4 py-2 text-muted text-center">...and {classImportRows.length - 10} more</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {classImportResult && (
+                <div className="space-y-2">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-green-700 font-semibold text-sm">{classImportResult.created.length} classes created/updated</p>
+                  </div>
+                  {classImportResult.failed.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-danger text-sm font-semibold mb-1">{classImportResult.failed.length} failed:</p>
+                      <ul className="text-xs text-danger space-y-1">{classImportResult.failed.map((f, i) => <li key={i}>{f.name}: {f.reason}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-wrap gap-4 items-end">
               <div className="flex-1 min-w-48">
                 <label className="block text-sm font-medium mb-1">Select Class</label>
