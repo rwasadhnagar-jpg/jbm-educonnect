@@ -10,6 +10,8 @@ import ScheduleSession from './pages/ScheduleSession'
 import AdminPanel from './pages/AdminPanel'
 import ParentDashboard from './pages/ParentDashboard'
 import Settings from './pages/Settings'
+import HomeworkSubmissions from './pages/HomeworkSubmissions'
+import MyClass from './pages/MyClass'
 import Navbar from './components/Navbar'
 import { useEffect } from 'react'
 import { requestNotificationPermission } from './utils/notifications'
@@ -45,6 +47,8 @@ export default function App() {
           <Route path="/sessions" element={<PrivateRoute roles={['student', 'teacher']}><Navbar /><Sessions /></PrivateRoute>} />
           <Route path="/teacher" element={<PrivateRoute roles={['teacher']}><Navbar /><TeacherDashboard /></PrivateRoute>} />
           <Route path="/homework/create" element={<PrivateRoute roles={['teacher']}><Navbar /><CreateHomework /></PrivateRoute>} />
+          <Route path="/homework/:id/submissions" element={<PrivateRoute roles={['teacher']}><Navbar /><HomeworkSubmissions /></PrivateRoute>} />
+          <Route path="/my-class" element={<PrivateRoute roles={['teacher']}><Navbar /><MyClass /></PrivateRoute>} />
           <Route path="/sessions/schedule" element={<PrivateRoute roles={['teacher']}><Navbar /><ScheduleSession /></PrivateRoute>} />
           <Route path="/admin" element={<PrivateRoute roles={['admin']}><Navbar /><AdminPanel /></PrivateRoute>} />
           <Route path="/parent" element={<PrivateRoute roles={['parent']}><Navbar /><ParentDashboard /></PrivateRoute>} />

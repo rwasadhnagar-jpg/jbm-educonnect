@@ -10,7 +10,7 @@ const router = Router()
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { user } = req
-    let query = supabase.from('sessions').select('id, title, start_time, end_time, status, class_group_id, teacher_id')
+    let query = supabase.from('sessions').select('id, title, start_time, end_time, status, class_group_id, teacher_id, notes')
 
     if (user.role === 'student' || user.role === 'parent') {
       const classGroupId = user.class_group_id ||
@@ -38,19 +38,11 @@ router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req,
     if (new Date(end_time) <= new Date(start_time))
       return res.status(400).json({ error: 'end_time must be after start_time' })
 
-    // Generate Jitsi Meet room (free, no account required)
-    let meet_uri = null
-    let meet_space_name = null
-
-    // Insert first to get the session ID, then generate Jitsi room from it
     const { data, error } = await supabase.from('sessions').insert({
-      title,
-      class_group_id,
+      title, class_group_id,
       teacher_id: req.user.id,
-      start_time,
-      end_time,
-      meet_uri,
-      meet_space_name,
+      start_time, end_time,
+      meet_uri: null, meet_space_name: null,
       status: 'scheduled'
     }).select().single()
 
@@ -81,7 +73,7 @@ router.patch('/:id/start', authenticateToken, requireRole('teacher', 'admin'), a
     const { data, error } = await supabase.from('sessions').update({ status: 'live' }).eq('id', req.params.id).select().single()
     if (error) throw error
 
-    sendPushToClass(session.class_group_id, `Session is LIVE: ${session.title}`, 'Join now on Jitsi Meet!').catch(() => {})
+    sendPushToClass(session.class_group_id, `Session is LIVE: ${session.title}`, 'Join now on JBM EduConnect!').catch(() => {})
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to start session' })
@@ -90,6 +82,11 @@ router.patch('/:id/start', authenticateToken, requireRole('teacher', 'admin'), a
 
 router.patch('/:id/end', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
   try {
+    const { data: session } = await supabase.from('sessions').select('teacher_id').eq('id', req.params.id).single()
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.teacher_id !== req.user.id && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Forbidden' })
+
     const { data, error } = await supabase.from('sessions').update({ status: 'ended' }).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json(data)
@@ -98,7 +95,99 @@ router.patch('/:id/end', authenticateToken, requireRole('teacher', 'admin'), asy
   }
 })
 
-// Returns the Google Meet URI for authorized users — never exposes it to parents
+// PATCH add/update notes on a session
+router.patch('/:id/notes', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { notes } = req.body
+    const { data: session } = await supabase.from('sessions').select('teacher_id').eq('id', req.params.id).single()
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.teacher_id !== req.user.id && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Forbidden' })
+
+    const { data, error } = await supabase.from('sessions').update({ notes }).eq('id', req.params.id).select().single()
+    if (error) throw error
+    res.json(data)
+  } catch {
+    res.status(500).json({ error: 'Failed to save notes' })
+  }
+})
+
+// DELETE (cancel) a session
+router.delete('/:id', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { data: session } = await supabase.from('sessions').select('teacher_id, status').eq('id', req.params.id).single()
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.teacher_id !== req.user.id && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Forbidden' })
+    if (session.status === 'live')
+      return res.status(400).json({ error: 'Cannot delete a live session. End it first.' })
+
+    const { error } = await supabase.from('sessions').delete().eq('id', req.params.id)
+    if (error) throw error
+    res.json({ message: 'Session deleted' })
+  } catch {
+    res.status(500).json({ error: 'Failed to delete session' })
+  }
+})
+
+// GET attendance for a session
+router.get('/:id/attendance', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { data: session } = await supabase.from('sessions').select('class_group_id, teacher_id').eq('id', req.params.id).single()
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.teacher_id !== req.user.id && req.user.role !== 'admin')
+      return res.status(403).json({ error: 'Forbidden' })
+
+    const { data: students } = await supabase.from('users')
+      .select('id, full_name, username')
+      .eq('class_group_id', session.class_group_id)
+      .eq('role', 'student')
+      .order('full_name')
+
+    const { data: attendance } = await supabase.from('session_attendance')
+      .select('*')
+      .eq('session_id', req.params.id)
+
+    const attMap = {}
+    ;(attendance || []).forEach(a => { attMap[a.student_id] = a.status })
+
+    const result = (students || []).map(s => ({
+      student_id: s.id,
+      full_name: s.full_name,
+      username: s.username,
+      status: attMap[s.id] || 'absent'
+    }))
+    res.json(result)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to fetch attendance' })
+  }
+})
+
+// POST save attendance (bulk upsert)
+router.post('/:id/attendance', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { attendance } = req.body
+    if (!Array.isArray(attendance)) return res.status(400).json({ error: 'attendance must be an array' })
+
+    const rows = attendance.map(entry => ({
+      session_id: req.params.id,
+      student_id: entry.student_id,
+      status: entry.status || 'present',
+      marked_at: new Date().toISOString()
+    }))
+
+    const { error } = await supabase.from('session_attendance')
+      .upsert(rows, { onConflict: 'session_id,student_id' })
+    if (error) throw error
+    res.json({ message: `Attendance saved for ${rows.length} students` })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to save attendance' })
+  }
+})
+
+// POST join session
 router.post('/:id/join', authenticateToken, requireRole('student', 'teacher'), async (req, res) => {
   try {
     const { user } = req

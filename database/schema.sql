@@ -171,3 +171,41 @@ ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE homework ADD COLUMN IF NOT EXISTS subject TEXT;
 ALTER TABLE homework ADD COLUMN IF NOT EXISTS max_marks INT;
 ALTER TABLE homework ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Homework' CHECK (category IN ('Homework','Classwork','Project','Test'));
+
+-- ============================================================
+-- HOMEWORK SUBMISSIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS homework_submissions (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  homework_id   UUID NOT NULL REFERENCES homework(id) ON DELETE CASCADE,
+  student_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text_response TEXT,
+  marks_obtained NUMERIC,
+  graded_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+  graded_at     TIMESTAMPTZ,
+  submitted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (homework_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_submissions_homework ON homework_submissions(homework_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_student  ON homework_submissions(student_id);
+
+-- ============================================================
+-- SESSION ATTENDANCE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS session_attendance (
+  id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status     TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present','absent')),
+  marked_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (session_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_session ON session_attendance(session_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_student ON session_attendance(student_id);
+
+-- Additional columns for existing tables
+ALTER TABLE users    ADD COLUMN IF NOT EXISTS last_login  TIMESTAMPTZ;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS notes       TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;

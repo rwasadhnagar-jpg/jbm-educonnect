@@ -31,6 +31,8 @@ export default function AdminPanel() {
   const [createForm, setCreateForm] = useState({ username: '', full_name: '', email: '', role: 'student', class_group_id: '', password: '' })
   const [creating, setCreating] = useState(false)
   const [formMsg, setFormMsg] = useState({ type: '', text: '' })
+  const [promoteUser, setPromoteUser] = useState(null)
+  const [promoteClassId, setPromoteClassId] = useState('')
 
   // Classes state
   const [selectedClass, setSelectedClass] = useState('')
@@ -46,8 +48,36 @@ export default function AdminPanel() {
   // Announcements state
   const [annForm, setAnnForm] = useState({ title: '', message: '', target_class_group_id: '' })
   const [annLoading, setAnnLoading] = useState(false)
+  const [editAnn, setEditAnn] = useState(null)
+  const [editAnnForm, setEditAnnForm] = useState({})
+
+  // Homework filters
+  const [hwSearch, setHwSearch] = useState('')
+  const [hwClassFilter, setHwClassFilter] = useState('')
+
+  // Session filters
+  const [sessClassFilter, setSessClassFilter] = useState('')
+  const [sessStatusFilter, setSessStatusFilter] = useState('')
+
+  // Live monitor auto-refresh
+  const [lastRefresh, setLastRefresh] = useState(Date.now())
 
   useEffect(() => {
+    loadData()
+  }, [])
+
+  useEffect(() => {
+    if (section !== 'live') return
+    const interval = setInterval(() => {
+      api.get('/api/sessions').then(({ data }) => {
+        setAllSessions(data || [])
+        setLastRefresh(Date.now())
+      }).catch(() => {})
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [section])
+
+  const loadData = () => {
     Promise.all([
       api.get('/api/users'),
       api.get('/api/users/class-groups'),
@@ -61,7 +91,7 @@ export default function AdminPanel() {
       setAllHomework(hw.data || [])
       setAnnouncements(ann.data || [])
     }).catch(() => {}).finally(() => setLoading(false))
-  }, [])
+  }
 
   // ── Helpers ──
   const liveSessions = allSessions.filter(s => s.status === 'live')
@@ -75,10 +105,21 @@ export default function AdminPanel() {
   })
 
   const classStudents = selectedClass ? users.filter(u => u.role === 'student' && u.class_group_id === selectedClass) : []
-
   const className = (id) => classGroups.find(c => c.id === id)?.name || '—'
 
-  // ── Actions ──
+  const filteredHomework = allHomework.filter(hw => {
+    const matchSearch = !hwSearch || hw.title?.toLowerCase().includes(hwSearch.toLowerCase()) || hw.subject?.toLowerCase().includes(hwSearch.toLowerCase())
+    const matchClass = !hwClassFilter || hw.class_group_id === hwClassFilter
+    return matchSearch && matchClass
+  })
+
+  const filteredSessions = allSessions.filter(s => {
+    const matchClass = !sessClassFilter || s.class_group_id === sessClassFilter
+    const matchStatus = !sessStatusFilter || s.status === sessStatusFilter
+    return matchClass && matchStatus
+  })
+
+  // ── User Actions ──
   const handleCreate = async (e) => {
     e.preventDefault(); setFormMsg({ type: '', text: '' }); setCreating(true)
     try {
@@ -121,6 +162,33 @@ export default function AdminPanel() {
     catch { alert('Failed to reset password') }
   }
 
+  const handleExportUsers = () => {
+    const rows = filteredUsers.map(u => ({
+      'Full Name': u.full_name,
+      'Username': u.username,
+      'Role': u.role,
+      'Class': u.class_group_name || '',
+      'Email': u.email || '',
+      'Status': u.is_active === false ? 'Inactive' : 'Active',
+      'Last Login': u.last_login ? new Date(u.last_login).toLocaleString('en-IN') : 'Never'
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Users')
+    XLSX.writeFile(wb, `JBM_Users_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  const handlePromote = async () => {
+    if (!promoteClassId) return alert('Select a new class')
+    try {
+      const { data } = await api.patch(`/api/users/${promoteUser.id}`, { class_group_id: promoteClassId })
+      setUsers(prev => prev.map(u => u.id === data.id ? { ...u, ...data, class_group_name: className(promoteClassId) } : u))
+      setPromoteUser(null)
+      alert(`${promoteUser.full_name} promoted to ${className(promoteClassId)}`)
+    } catch { alert('Failed to promote student') }
+  }
+
+  // ── Class Actions ──
   const handleBulkClassReset = async () => {
     const pwd = prompt(`Reset password for ALL students in ${className(bulkPwdClass)}:`)
     if (!pwd || pwd.length < 8) return alert('Password too short')
@@ -130,6 +198,7 @@ export default function AdminPanel() {
     } catch { alert('Failed') }
   }
 
+  // ── Session Actions ──
   const handleJoinSession = async (sessionId) => {
     try {
       const { data } = await api.post(`/api/sessions/${sessionId}/join`)
@@ -137,6 +206,23 @@ export default function AdminPanel() {
     } catch (e) { alert(e.response?.data?.error || 'Cannot join') }
   }
 
+  const handleForceEndSession = async (sessionId, title) => {
+    if (!confirm(`Force-end session: "${title}"?`)) return
+    try {
+      await api.patch(`/api/sessions/${sessionId}/end`)
+      setAllSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'ended' } : s))
+    } catch { alert('Failed to end session') }
+  }
+
+  const handleDeleteSession = async (sessionId, title) => {
+    if (!confirm(`Delete session: "${title}"? This cannot be undone.`)) return
+    try {
+      await api.delete(`/api/sessions/${sessionId}`)
+      setAllSessions(prev => prev.filter(s => s.id !== sessionId))
+    } catch (e) { alert(e.response?.data?.error || 'Failed to delete session') }
+  }
+
+  // ── Bulk Import Actions ──
   const handleFileUpload = (e) => {
     const file = e.target.files[0]; if (!file) return
     const reader = new FileReader()
@@ -184,6 +270,7 @@ export default function AdminPanel() {
     XLSX.writeFile(wb, 'JBM_Import_Template.xlsx')
   }
 
+  // ── Announcement Actions ──
   const handleCreateAnnouncement = async (e) => {
     e.preventDefault(); setAnnLoading(true)
     try {
@@ -198,6 +285,30 @@ export default function AdminPanel() {
     if (!confirm('Delete this announcement?')) return
     try { await api.delete(`/api/announcements/${id}`); setAnnouncements(prev => prev.filter(a => a.id !== id)) }
     catch { alert('Failed to delete') }
+  }
+
+  const handlePinAnn = async (a) => {
+    try {
+      const { data } = await api.patch(`/api/announcements/${a.id}`, { is_pinned: !a.is_pinned })
+      setAnnouncements(prev => prev.map(x => x.id === data.id ? { ...x, ...data } : x))
+    } catch { alert('Failed to update') }
+  }
+
+  const handleEditAnnSave = async () => {
+    try {
+      const { data } = await api.patch(`/api/announcements/${editAnn.id}`, editAnnForm)
+      setAnnouncements(prev => prev.map(x => x.id === data.id ? { ...x, ...data } : x))
+      setEditAnn(null)
+    } catch { alert('Failed to edit announcement') }
+  }
+
+  // ── Homework Actions ──
+  const handleDeleteHw = async (id) => {
+    if (!confirm('Delete this homework assignment?')) return
+    try {
+      await api.delete(`/api/homework/${id}`)
+      setAllHomework(prev => prev.filter(h => h.id !== id))
+    } catch { alert('Failed to delete homework') }
   }
 
   const roleBadge = (role) => {
@@ -266,7 +377,8 @@ export default function AdminPanel() {
                 {classGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
               </select>
               {(search || filterRole || filterClass) && <button onClick={() => { setSearch(''); setFilterRole(''); setFilterClass('') }} className="text-sm text-muted hover:text-danger">✕ Clear</button>}
-              <span className="text-xs text-muted ml-auto">{filteredUsers.length} shown</span>
+              <button onClick={handleExportUsers} className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors whitespace-nowrap">⬇ Export Excel</button>
+              <span className="text-xs text-muted">{filteredUsers.length} shown</span>
             </div>
 
             {/* Table */}
@@ -280,6 +392,7 @@ export default function AdminPanel() {
                       <th className="px-4 py-3 text-left">Role</th>
                       <th className="px-4 py-3 text-left">Class</th>
                       <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Last Login</th>
                       <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
                   </thead>
@@ -295,11 +408,17 @@ export default function AdminPanel() {
                             {u.is_active === false ? 'Inactive' : 'Active'}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-muted text-xs">
+                          {u.last_login ? new Date(u.last_login).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                        </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-3 text-xs">
+                          <div className="flex gap-2 text-xs flex-wrap">
                             <button onClick={() => { setEditUser(u); setEditForm({ full_name: u.full_name, email: u.email || '', class_group_id: u.class_group_id || '', role: u.role }) }} className="text-primary hover:underline">Edit</button>
                             <button onClick={() => handleResetPassword(u.id)} className="text-muted hover:text-textMain">Reset pwd</button>
                             <button onClick={() => handleToggleActive(u)} className="text-muted hover:text-textMain">{u.is_active === false ? 'Activate' : 'Deactivate'}</button>
+                            {u.role === 'student' && (
+                              <button onClick={() => { setPromoteUser(u); setPromoteClassId(u.class_group_id || '') }} className="text-purple-600 hover:underline">Promote</button>
+                            )}
                             <button onClick={() => handleDelete(u)} className="text-danger hover:underline">Delete</button>
                           </div>
                         </td>
@@ -348,6 +467,7 @@ export default function AdminPanel() {
                       <th className="px-4 py-3 text-left">Name</th>
                       <th className="px-4 py-3 text-left">Username</th>
                       <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Last Login</th>
                       <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
                   </thead>
@@ -358,10 +478,14 @@ export default function AdminPanel() {
                         <td className="px-4 py-2 font-medium">{u.full_name}</td>
                         <td className="px-4 py-2 text-muted">{u.username}</td>
                         <td className="px-4 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active === false ? 'bg-red-50 text-danger' : 'bg-green-50 text-success'}`}>{u.is_active === false ? 'Inactive' : 'Active'}</span></td>
-                        <td className="px-4 py-2"><button onClick={() => handleResetPassword(u.id)} className="text-xs text-muted hover:text-danger">Reset pwd</button></td>
+                        <td className="px-4 py-2 text-muted text-xs">{u.last_login ? new Date(u.last_login).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Never'}</td>
+                        <td className="px-4 py-2 flex gap-3">
+                          <button onClick={() => handleResetPassword(u.id)} className="text-xs text-muted hover:text-danger">Reset pwd</button>
+                          <button onClick={() => { setPromoteUser(u); setPromoteClassId(u.class_group_id || '') }} className="text-xs text-purple-600 hover:underline">Promote</button>
+                        </td>
                       </tr>
                     ))}
-                    {classStudents.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-muted">No students in this class yet.</td></tr>}
+                    {classStudents.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-muted">No students in this class yet.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -387,7 +511,6 @@ export default function AdminPanel() {
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:text-sm file:cursor-pointer" />
               </div>
             </div>
-
             {bulkRows.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b">
@@ -452,18 +575,25 @@ export default function AdminPanel() {
             </div>
             <div className="space-y-3">
               {announcements.length === 0 && <p className="text-muted text-sm text-center py-8">No announcements yet.</p>}
-              {announcements.map(a => (
-                <div key={a.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              {[...announcements].sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0)).map(a => (
+                <div key={a.id} className={`bg-white rounded-xl border shadow-sm p-4 ${a.is_pinned ? 'border-yellow-200' : 'border-gray-100'}`}>
                   <div className="flex items-start justify-between gap-4">
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
+                        {a.is_pinned && <span className="text-yellow-500 text-sm">📌</span>}
                         <span className="font-semibold text-sm">{a.title}</span>
                         <span className="text-xs bg-blue-50 text-primary px-2 py-0.5 rounded-full">{a.class_name || 'All Classes'}</span>
                       </div>
                       <p className="text-sm text-muted">{a.message}</p>
                       <p className="text-xs text-muted mt-2">{new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
-                    <button onClick={() => handleDeleteAnn(a.id)} className="text-xs text-danger hover:underline shrink-0">Delete</button>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => handlePinAnn(a)} className={`text-xs px-2 py-1 rounded-lg transition-colors ${a.is_pinned ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-gray-100 text-muted hover:bg-gray-200'}`}>
+                        {a.is_pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                      <button onClick={() => { setEditAnn(a); setEditAnnForm({ title: a.title, message: a.message }) }} className="text-xs bg-blue-50 text-primary px-2 py-1 rounded-lg hover:bg-blue-100">Edit</button>
+                      <button onClick={() => handleDeleteAnn(a.id)} className="text-xs text-danger hover:underline">Delete</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -474,31 +604,45 @@ export default function AdminPanel() {
         {/* ══ HOMEWORK ══ */}
         {section === 'homework' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-textMain">Homework Overview <span className="text-muted font-normal text-base">({allHomework.length} total)</span></h2>
+            <h2 className="text-xl font-bold text-textMain">Homework Overview <span className="text-muted font-normal text-base">({filteredHomework.length} / {allHomework.length})</span></h2>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3">
+              <input className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary flex-1 min-w-48" placeholder="Search by title or subject..." value={hwSearch} onChange={e => setHwSearch(e.target.value)} />
+              <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={hwClassFilter} onChange={e => setHwClassFilter(e.target.value)}>
+                <option value="">All Classes</option>
+                {classGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+              </select>
+              {(hwSearch || hwClassFilter) && <button onClick={() => { setHwSearch(''); setHwClassFilter('') }} className="text-sm text-muted hover:text-danger">✕ Clear</button>}
+            </div>
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-muted text-xs uppercase">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Title</th>
-                    <th className="px-4 py-3 text-left">Class</th>
-                    <th className="px-4 py-3 text-left">Type</th>
-                    <th className="px-4 py-3 text-left">Due Date</th>
-                    <th className="px-4 py-3 text-left">Created</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {allHomework.map(hw => (
-                    <tr key={hw.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{hw.title}</td>
-                      <td className="px-4 py-3 text-muted text-xs">{className(hw.class_group_id)}</td>
-                      <td className="px-4 py-3"><span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">{hw.type}</span></td>
-                      <td className="px-4 py-3 text-muted text-xs">{hw.due_date ? new Date(hw.due_date).toLocaleDateString('en-IN') : '—'}</td>
-                      <td className="px-4 py-3 text-muted text-xs">{new Date(hw.created_at).toLocaleDateString('en-IN')}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-muted text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Title</th>
+                      <th className="px-4 py-3 text-left">Subject</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Category</th>
+                      <th className="px-4 py-3 text-left">Due Date</th>
+                      <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
-                  ))}
-                  {allHomework.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-muted">No homework assigned yet.</td></tr>}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredHomework.map(hw => (
+                      <tr key={hw.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium max-w-xs truncate">{hw.title}</td>
+                        <td className="px-4 py-3 text-muted text-xs">{hw.subject || '—'}</td>
+                        <td className="px-4 py-3 text-muted text-xs">{className(hw.class_group_id)}</td>
+                        <td className="px-4 py-3"><span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">{hw.category || hw.type}</span></td>
+                        <td className="px-4 py-3 text-muted text-xs">{hw.due_date ? new Date(hw.due_date).toLocaleDateString('en-IN') : '—'}</td>
+                        <td className="px-4 py-3">
+                          <button onClick={() => handleDeleteHw(hw.id)} className="text-xs text-danger hover:underline">Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredHomework.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-muted">No homework found.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -506,35 +650,61 @@ export default function AdminPanel() {
         {/* ══ SESSION HISTORY ══ */}
         {section === 'sessions' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-textMain">Session History <span className="text-muted font-normal text-base">({allSessions.length} total)</span></h2>
+            <h2 className="text-xl font-bold text-textMain">Session History <span className="text-muted font-normal text-base">({filteredSessions.length} / {allSessions.length})</span></h2>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3">
+              <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={sessClassFilter} onChange={e => setSessClassFilter(e.target.value)}>
+                <option value="">All Classes</option>
+                {classGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+              </select>
+              <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value={sessStatusFilter} onChange={e => setSessStatusFilter(e.target.value)}>
+                <option value="">All Statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="live">Live</option>
+                <option value="ended">Ended</option>
+              </select>
+              {(sessClassFilter || sessStatusFilter) && <button onClick={() => { setSessClassFilter(''); setSessStatusFilter('') }} className="text-sm text-muted hover:text-danger">✕ Clear</button>}
+            </div>
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-muted text-xs uppercase">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Title</th>
-                    <th className="px-4 py-3 text-left">Class</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Start Time</th>
-                    <th className="px-4 py-3 text-left">End Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {allSessions.map(s => (
-                    <tr key={s.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{s.title}</td>
-                      <td className="px-4 py-3 text-muted text-xs">{className(s.class_group_id)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'live' ? 'bg-red-50 text-red-600' : s.status === 'ended' ? 'bg-gray-100 text-muted' : 'bg-blue-50 text-primary'}`}>
-                          {s.status === 'live' ? '🔴 Live' : s.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted text-xs">{s.start_time ? new Date(s.start_time).toLocaleString('en-IN') : '—'}</td>
-                      <td className="px-4 py-3 text-muted text-xs">{s.end_time ? new Date(s.end_time).toLocaleString('en-IN') : '—'}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-muted text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Title</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Start Time</th>
+                      <th className="px-4 py-3 text-left">End Time</th>
+                      <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
-                  ))}
-                  {allSessions.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-muted">No sessions yet.</td></tr>}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredSessions.map(s => (
+                      <tr key={s.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{s.title}</td>
+                        <td className="px-4 py-3 text-muted text-xs">{className(s.class_group_id)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'live' ? 'bg-red-50 text-red-600' : s.status === 'ended' ? 'bg-gray-100 text-muted' : 'bg-blue-50 text-primary'}`}>
+                            {s.status === 'live' ? '🔴 Live' : s.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted text-xs">{s.start_time ? new Date(s.start_time).toLocaleString('en-IN') : '—'}</td>
+                        <td className="px-4 py-3 text-muted text-xs">{s.end_time ? new Date(s.end_time).toLocaleString('en-IN') : '—'}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2 text-xs">
+                            {s.status === 'live' && (
+                              <button onClick={() => handleForceEndSession(s.id, s.title)} className="text-orange-600 hover:underline">Force End</button>
+                            )}
+                            {s.status !== 'live' && (
+                              <button onClick={() => handleDeleteSession(s.id, s.title)} className="text-danger hover:underline">Delete</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredSessions.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-muted">No sessions found.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -542,8 +712,15 @@ export default function AdminPanel() {
         {/* ══ LIVE MONITOR ══ */}
         {section === 'live' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-textMain">Live Monitor</h2>
-            <p className="text-sm text-muted">Join any live session as an observer.</p>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-textMain">Live Monitor</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">Auto-refreshes every 30s</span>
+                <span className="text-xs text-muted">Last: {new Date(lastRefresh).toLocaleTimeString('en-IN')}</span>
+                <button onClick={() => { api.get('/api/sessions').then(({ data }) => { setAllSessions(data || []); setLastRefresh(Date.now()) }) }} className="text-xs bg-gray-100 text-muted px-3 py-1 rounded-lg hover:bg-gray-200">↺ Refresh Now</button>
+              </div>
+            </div>
+            <p className="text-sm text-muted">Monitor and control all live sessions.</p>
             {liveSessions.length === 0 ? (
               <div className="text-center py-16 text-muted bg-white rounded-xl border border-gray-100 shadow-sm">
                 <p className="text-4xl mb-3">📹</p>
@@ -556,18 +733,23 @@ export default function AdminPanel() {
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
                     <span className="font-semibold">{s.title}</span>
                   </div>
-                  <p className="text-xs text-muted">{className(s.class_group_id)}</p>
+                  <p className="text-xs text-muted">{className(s.class_group_id)} • Started {new Date(s.start_time).toLocaleTimeString('en-IN')}</p>
                 </div>
-                <button onClick={() => handleJoinSession(s.id)} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors">
-                  Monitor
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => handleJoinSession(s.id)} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors">
+                    Monitor
+                  </button>
+                  <button onClick={() => handleForceEndSession(s.id, s.title)} className="bg-gray-100 text-muted px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-50 hover:text-danger transition-colors">
+                    Force End
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </main>
 
-      {/* ── Edit Modal ── */}
+      {/* ── Edit User Modal ── */}
       {editUser && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
@@ -593,6 +775,50 @@ export default function AdminPanel() {
             <div className="flex gap-3 pt-2">
               <button onClick={handleSaveEdit} className="flex-1 bg-primary text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">Save Changes</button>
               <button onClick={() => setEditUser(null)} className="flex-1 border border-gray-200 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Promote Student Modal ── */}
+      {promoteUser && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg">Promote Student</h3>
+              <button onClick={() => setPromoteUser(null)} className="text-muted hover:text-textMain text-xl">✕</button>
+            </div>
+            <p className="text-sm text-muted">Moving <span className="font-semibold text-textMain">{promoteUser.full_name}</span> from <span className="font-medium">{className(promoteUser.class_group_id)}</span></p>
+            <div>
+              <label className="block text-xs font-medium text-muted mb-1">New Class</label>
+              <select className={inp} value={promoteClassId} onChange={e => setPromoteClassId(e.target.value)}>
+                <option value="">Select new class...</option>
+                {classGroups.filter(cg => cg.id !== promoteUser.class_group_id).map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setPromoteUser(null)} className="flex-1 border border-gray-200 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handlePromote} disabled={!promoteClassId} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50">Promote</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Announcement Modal ── */}
+      {editAnn && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg">Edit Announcement</h3>
+              <button onClick={() => setEditAnn(null)} className="text-muted hover:text-textMain text-xl">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div><label className="block text-xs font-medium text-muted mb-1">Title</label><input className={inp} value={editAnnForm.title} onChange={e => setEditAnnForm({ ...editAnnForm, title: e.target.value })} /></div>
+              <div><label className="block text-xs font-medium text-muted mb-1">Message</label><textarea className={inp + ' resize-none'} rows={5} value={editAnnForm.message} onChange={e => setEditAnnForm({ ...editAnnForm, message: e.target.value })} /></div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setEditAnn(null)} className="flex-1 border border-gray-200 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleEditAnnSave} className="flex-1 bg-primary text-white py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Save Changes</button>
             </div>
           </div>
         </div>

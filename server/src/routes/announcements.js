@@ -64,4 +64,20 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) 
   }
 })
 
+// PATCH edit announcement (admin only)
+router.patch('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { title, message, is_pinned } = req.body
+    const updates = {}
+    if (title !== undefined) updates.title = title
+    if (message !== undefined) updates.message = message
+    if (is_pinned !== undefined) updates.is_pinned = is_pinned
+    const { data, error } = await supabase.from('announcements').update(updates).eq('id', req.params.id).select().single()
+    if (error) throw error
+    res.json(data)
+  } catch {
+    res.status(500).json({ error: 'Failed to update announcement' })
+  }
+})
+
 export default router

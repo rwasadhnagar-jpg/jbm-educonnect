@@ -9,7 +9,7 @@ export default function Navbar() {
 
   const links = {
     student: [{ to: '/student', label: 'Dashboard' }, { to: '/sessions', label: 'Sessions' }, { to: '/settings', label: 'Settings' }],
-    teacher: [{ to: '/teacher', label: 'Dashboard' }, { to: '/sessions', label: 'Sessions' }, { to: '/homework/create', label: '+ Homework' }, { to: '/sessions/schedule', label: '+ Session' }, { to: '/settings', label: 'Settings' }],
+    teacher: [{ to: '/teacher', label: 'Dashboard' }, { to: '/sessions', label: 'Sessions' }, { to: '/homework/create', label: '+ Homework' }, { to: '/sessions/schedule', label: '+ Session' }, { to: '/my-class', label: 'My Class' }, { to: '/settings', label: 'Settings' }],
     admin: [{ to: '/admin', label: 'Admin Panel' }, { to: '/settings', label: 'Settings' }],
     parent: [{ to: '/parent', label: 'Dashboard' }, { to: '/settings', label: 'Settings' }]
   }

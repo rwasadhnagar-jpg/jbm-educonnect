@@ -22,6 +22,9 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) return res.status(401).json({ error: 'Invalid username or password' })
 
+    // Update last login timestamp
+    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id)
+
     const payload = {
       id: user.id,
       username: user.username,
