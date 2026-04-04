@@ -10,7 +10,7 @@ const router = Router()
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { user } = req
-    let query = supabase.from('sessions').select('id, title, start_time, end_time, status, class_group_id, teacher_id, notes')
+    let query = supabase.from('sessions').select('id, title, subject, start_time, end_time, status, class_group_id, teacher_id, notes')
 
     if (user.role === 'student' || user.role === 'parent') {
       const classGroupId = user.class_group_id ||
@@ -32,14 +32,14 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    const { title, class_group_id, start_time, end_time } = req.body
+    const { title, subject, class_group_id, start_time, end_time } = req.body
     if (!title || !class_group_id || !start_time || !end_time)
       return res.status(400).json({ error: 'Missing required fields' })
     if (new Date(end_time) <= new Date(start_time))
       return res.status(400).json({ error: 'end_time must be after start_time' })
 
     const { data, error } = await supabase.from('sessions').insert({
-      title, class_group_id,
+      title, subject: subject || null, class_group_id,
       teacher_id: req.user.id,
       start_time, end_time,
       meet_uri: null, meet_space_name: null,

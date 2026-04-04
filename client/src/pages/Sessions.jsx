@@ -126,6 +126,7 @@ export default function Sessions() {
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <h3 className="font-semibold text-textMain">{s.title}</h3>
+                {s.subject && <span className="inline-block text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full mt-1 mr-2">{s.subject}</span>}
                 <p className="text-sm text-muted mt-1">{new Date(s.start_time).toLocaleString('en-IN')} – {new Date(s.end_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
               </div>
               <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${s.status === 'live' ? 'bg-green-100 text-green-800' : s.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'}`}>

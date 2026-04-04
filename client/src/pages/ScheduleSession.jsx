@@ -4,7 +4,7 @@ import api from '../api/client'
 
 export default function ScheduleSession() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ title: '', class_group_id: '', start_time: '', end_time: '' })
+  const [form, setForm] = useState({ title: '', subject: '', class_group_id: '', start_time: '', end_time: '' })
   const [classGroups, setClassGroups] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -45,7 +45,14 @@ export default function ScheduleSession() {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Session Title</label>
-          <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="e.g. Math Live Class" />
+          <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" placeholder="e.g. Chapter 5 - Fractions" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Subject</label>
+          <select value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+            <option value="">Select subject...</option>
+            {['Mathematics','Science','English','Hindi','Social Studies','Computer','Sanskrit','Art','Physical Education','GK'].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

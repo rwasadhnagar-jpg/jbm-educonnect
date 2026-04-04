@@ -59,6 +59,21 @@ router.post('/refresh', async (req, res) => {
   }
 })
 
+// GET fresh user profile from DB (fixes stale JWT class_group_id)
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, username, role, full_name, email, class_group_id, school_id, is_active')
+      .eq('id', req.user.id)
+      .single()
+    if (error || !user) return res.status(404).json({ error: 'User not found' })
+    res.json(user)
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch profile' })
+  }
+})
+
 router.post('/logout', authenticateToken, (req, res) => {
   res.json({ message: 'Logged out successfully' })
 })

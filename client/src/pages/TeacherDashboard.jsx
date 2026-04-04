@@ -111,6 +111,7 @@ export default function TeacherDashboard() {
               <div key={s.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between">
                 <div>
                   <p className="font-medium text-sm text-textMain">{s.title}</p>
+                  {s.subject && <span className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full">{s.subject}</span>}
                   <p className="text-xs text-muted">{new Date(s.start_time).toLocaleString('en-IN')}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.status === 'live' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>

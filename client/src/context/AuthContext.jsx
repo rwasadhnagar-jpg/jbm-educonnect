@@ -14,14 +14,16 @@ export function AuthProvider({ children }) {
       try {
         const decoded = jwtDecode(token)
         if (decoded.exp * 1000 > Date.now()) {
-          setUser(decoded)
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-        } else {
-          localStorage.removeItem('token')
+          // Fetch fresh profile so class_group_id is always up-to-date
+          api.get('/api/auth/me')
+            .then(({ data }) => setUser({ ...decoded, ...data }))
+            .catch(() => setUser(decoded))
+            .finally(() => setLoading(false))
+          return
         }
-      } catch {
-        localStorage.removeItem('token')
-      }
+      } catch {}
+      localStorage.removeItem('token')
     }
     setLoading(false)
   }, [])
