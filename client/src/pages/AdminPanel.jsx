@@ -46,6 +46,10 @@ export default function AdminPanel() {
   const [bulkRows, setBulkRows] = useState([])
   const [defaultPassword, setDefaultPassword] = useState('JBM@2025')
   const [bulkLoading, setBulkLoading] = useState(false)
+  // Manual entry state
+  const [manualClass, setManualClass] = useState('')
+  const [manualRole, setManualRole] = useState('student')
+  const [manualNames, setManualNames] = useState('')
   const [bulkResult, setBulkResult] = useState(null)
   const fileRef = useRef()
 
@@ -298,6 +302,34 @@ export default function AdminPanel() {
       setBulkRows(normalized); setBulkResult(null)
     }
     reader.readAsBinaryString(file)
+  }
+
+  const genUsername = (name, classCode, role) => {
+    const base = name.toLowerCase().replace(/\s+/g, '')
+    return role === 'student' && classCode ? `${base}@${classCode}` : base
+  }
+  const genPassword = (name, classCode, role) => {
+    const base = name.replace(/\s+/g, '')
+    return role === 'student' && classCode ? `${base}@${classCode}` : `${base}@jbm`
+  }
+
+  const handleManualAdd = () => {
+    const names = manualNames.split('\n').map(n => n.trim()).filter(Boolean)
+    if (!names.length) return alert('Enter at least one name')
+    const cg = classGroups.find(g => g.id === manualClass)
+    const code = cg?.code || ''
+    const newRows = names.map(name => ({
+      full_name: name,
+      username: genUsername(name, code, manualRole),
+      password: genPassword(name, code, manualRole),
+      email: '',
+      role: manualRole,
+      class_group_id: manualClass || '',
+      class_label: cg?.name || ''
+    }))
+    setBulkRows(prev => [...prev, ...newRows])
+    setManualNames('')
+    setBulkResult(null)
   }
 
   const handleBulkImport = async () => {
@@ -599,9 +631,46 @@ export default function AdminPanel() {
         {section === 'bulk' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-textMain">Bulk Import</h2>
+
+            {/* Manual Entry */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <h3 className="font-semibold">Add Students Manually</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Role</label>
+                  <select className={inp} value={manualRole} onChange={e => setManualRole(e.target.value)}>
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher</option>
+                    <option value="parent">Parent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Class</label>
+                  <select className={inp} value={manualClass} onChange={e => setManualClass(e.target.value)}>
+                    <option value="">No class</option>
+                    {classGroups.map(cg => <option key={cg.id} value={cg.id}>{cg.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Student Names <span className="text-muted font-normal">(one per line)</span></label>
+                <textarea
+                  className={inp + ' resize-none'}
+                  rows={6}
+                  placeholder={'Rahul Sharma\nPriya Verma\nAmit Kumar'}
+                  value={manualNames}
+                  onChange={e => setManualNames(e.target.value)}
+                />
+              </div>
+              <button onClick={handleManualAdd} className="bg-primary text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                Add to Import List
+              </button>
+            </div>
+
+            {/* Excel Upload */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-muted">Upload Excel with columns: <code className="bg-gray-100 px-1 rounded">full_name, username, password, email, role, class</code></p>
+                <h3 className="font-semibold">Or Upload Excel File</h3>
                 <button onClick={downloadTemplate} className="text-sm text-primary hover:underline whitespace-nowrap">Download Template</button>
               </div>
               <div>
@@ -617,9 +686,12 @@ export default function AdminPanel() {
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b">
                   <h3 className="font-semibold">{bulkRows.length} users ready</h3>
-                  <button onClick={handleBulkImport} disabled={bulkLoading} className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 transition-colors">
-                    {bulkLoading ? 'Importing...' : `Import ${bulkRows.length} Users`}
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setBulkRows([])} className="text-sm text-muted hover:text-danger px-3 py-2 rounded-lg border border-gray-200">Clear</button>
+                    <button onClick={handleBulkImport} disabled={bulkLoading} className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                      {bulkLoading ? 'Importing...' : `Import ${bulkRows.length} Users`}
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
