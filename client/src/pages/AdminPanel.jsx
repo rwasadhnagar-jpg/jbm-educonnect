@@ -266,13 +266,21 @@ export default function AdminPanel() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       const wb = XLSX.read(ev.target.result, { type: 'binary' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
-      const normalized = rows.map(row => {
+
+      // Read ALL sheets except 'Codes' reference sheet
+      const SKIP_SHEETS = ['codes', 'reference', 'instructions']
+      const allRows = []
+      wb.SheetNames.forEach(sheetName => {
+        if (SKIP_SHEETS.includes(sheetName.toLowerCase())) return
+        const ws = wb.Sheets[sheetName]
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        allRows.push(...rows)
+      })
+
+      const normalized = allRows.map(row => {
         const n = {}
         Object.entries(row).forEach(([k, v]) => { n[k.toLowerCase().trim().replace(/\s+/g, '_')] = String(v).trim() })
         const classLabel = n.class || n.class_group || ''
-        // Match by full name OR by code
         const matchedGroup = classGroups.find(g =>
           g.name.toLowerCase() === classLabel.toLowerCase() ||
           (g.code && g.code.toLowerCase() === classLabel.toLowerCase())
@@ -286,7 +294,7 @@ export default function AdminPanel() {
           class_group_id: matchedGroup?.id || '',
           class_label: classLabel
         }
-      }).filter(r => r.full_name || r.username)
+      }).filter(r => r.full_name && r.full_name.trim() !== '')
       setBulkRows(normalized); setBulkResult(null)
     }
     reader.readAsBinaryString(file)
