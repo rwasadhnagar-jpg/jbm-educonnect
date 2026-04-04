@@ -265,45 +265,6 @@ export default function AdminPanel() {
     finally { setClassImportLoading(false) }
   }
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0]; if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const wb = XLSX.read(ev.target.result, { type: 'binary' })
-
-      // Read ALL sheets except 'Codes' reference sheet
-      const SKIP_SHEETS = ['codes', 'reference', 'instructions']
-      const allRows = []
-      wb.SheetNames.forEach(sheetName => {
-        if (SKIP_SHEETS.includes(sheetName.toLowerCase())) return
-        const ws = wb.Sheets[sheetName]
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
-        allRows.push(...rows)
-      })
-
-      const normalized = allRows.map(row => {
-        const n = {}
-        Object.entries(row).forEach(([k, v]) => { n[k.toLowerCase().trim().replace(/\s+/g, '_')] = String(v).trim() })
-        const classLabel = n.class || n.class_group || ''
-        const matchedGroup = classGroups.find(g =>
-          g.name.toLowerCase() === classLabel.toLowerCase() ||
-          (g.code && g.code.toLowerCase() === classLabel.toLowerCase())
-        )
-        return {
-          full_name: n.full_name || n.name || '',
-          username: n.username || '',
-          password: n.password || '',
-          email: n.email || '',
-          role: (n.role || 'student').toLowerCase(),
-          class_group_id: matchedGroup?.id || '',
-          class_label: classLabel
-        }
-      }).filter(r => r.full_name && r.full_name.trim() !== '')
-      setBulkRows(normalized); setBulkResult(null)
-    }
-    reader.readAsBinaryString(file)
-  }
-
   const genUsername = (name, classCode, role) => {
     const base = name.toLowerCase().replace(/\s+/g, '')
     return role === 'student' && classCode ? `${base}@${classCode}` : base
@@ -311,6 +272,54 @@ export default function AdminPanel() {
   const genPassword = (name, classCode, role) => {
     const base = name.replace(/\s+/g, '')
     return role === 'student' && classCode ? `${base}@${classCode}` : `${base}@jbm`
+  }
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'binary', cellFormula: false, cellNF: false })
+        const SKIP_SHEETS = ['codes', 'reference', 'instructions']
+        const allRows = []
+        wb.SheetNames.forEach(sheetName => {
+          if (SKIP_SHEETS.includes(sheetName.toLowerCase())) return
+          const ws = wb.Sheets[sheetName]
+          const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false, blankrows: false })
+          rows.forEach(row => {
+            const n = {}
+            Object.entries(row).forEach(([k, v]) => { n[k.toLowerCase().trim().replace(/\s+/g, '_')] = String(v).trim() })
+            const fullName = (n.full_name || n.name || '').trim()
+            if (!fullName) return
+            const classLabel = (n.class || n.class_group || '').trim()
+            const matchedGroup = classGroups.find(g =>
+              g.name.toLowerCase() === classLabel.toLowerCase() ||
+              (g.code && g.code.toLowerCase() === classLabel.toLowerCase())
+            )
+            const role = (n.role || 'student').toLowerCase()
+            const code = matchedGroup?.code || ''
+            // Use Excel-generated username/password if present, else auto-generate
+            const username = (n.username && n.username !== '0') ? n.username : genUsername(fullName, code, role)
+            const password = (n.password && n.password !== '0') ? n.password : genPassword(fullName, code, role)
+            allRows.push({
+              full_name: fullName,
+              username,
+              password,
+              email: n.email || '',
+              role,
+              class_group_id: matchedGroup?.id || '',
+              class_label: classLabel
+            })
+          })
+        })
+        setBulkRows(allRows)
+        setBulkResult(null)
+        if (allRows.length === 0) alert('No student names found in the file. Please fill in the full_name column and save the file before uploading.')
+      } catch {
+        alert('Could not read the file. Make sure it is a valid .xlsx or .csv file.')
+      }
+    }
+    reader.readAsBinaryString(file)
   }
 
   const handleManualAdd = () => {
@@ -674,13 +683,17 @@ export default function AdminPanel() {
                 <button onClick={downloadTemplate} className="text-sm text-primary hover:underline whitespace-nowrap">Download Template</button>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Default Password <span className="text-muted">(used if password column is empty)</span></label>
+                <label className="block text-sm font-medium mb-1">Default Password <span className="text-muted">(used if no password in file)</span></label>
                 <input type="text" value={defaultPassword} onChange={e => setDefaultPassword(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-64" />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Upload File (.xlsx or .csv)</label>
-                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="text-sm text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:text-sm file:cursor-pointer" />
+              <div className="flex items-center gap-4">
+                <label className="cursor-pointer bg-primary text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                  Choose Excel File
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
+                </label>
+                <span className="text-sm text-muted">{fileRef.current?.files?.[0]?.name || 'No file chosen'}</span>
               </div>
+              <p className="text-xs text-muted">Fill student names in the template, save it, then select it here. Username &amp; password are auto-generated from the name.</p>
             </div>
             {bulkRows.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
