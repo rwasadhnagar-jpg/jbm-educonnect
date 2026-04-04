@@ -20,15 +20,12 @@ export default function TeacherDashboard() {
       api.get('/api/homework'),
       api.get('/api/sessions'),
       api.get('/api/announcements').catch(() => ({ data: [] })),
-      user?.class_group_id
-        ? api.get('/api/users').catch(() => ({ data: [] }))
-        : Promise.resolve({ data: [] })
-    ]).then(([hw, sess, ann, users]) => {
+      api.get('/api/users/my-class-students').catch(() => ({ data: [] }))
+    ]).then(([hw, sess, ann, studs]) => {
       setHomework(hw.data || [])
       setSessions(sess.data || [])
       setAnnouncements((ann.data || []).slice(0, 3))
-      const myStudents = (users.data || []).filter(u => u.role === 'student' && u.class_group_id === user?.class_group_id)
-      setStudents(myStudents)
+      setStudents(studs.data || [])
     }).catch(() => {}).finally(() => setLoading(false))
   }, [user])
 

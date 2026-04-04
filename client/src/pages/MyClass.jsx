@@ -16,11 +16,10 @@ export default function MyClass() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/api/users'),
+      api.get('/api/users/my-class-students'),
       api.get('/api/homework')
-    ]).then(([usersRes, hwRes]) => {
-      const classStudents = (usersRes.data || []).filter(u => u.role === 'student' && u.class_group_id === user?.class_group_id)
-      setStudents(classStudents)
+    ]).then(([studsRes, hwRes]) => {
+      setStudents(studsRes.data || [])
       setHomework(hwRes.data || [])
     }).catch(() => {}).finally(() => setLoading(false))
   }, [user])

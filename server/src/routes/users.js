@@ -24,6 +24,24 @@ router.get('/', authenticateToken, requireRole('admin'), async (req, res) => {
   }
 })
 
+// Teacher fetches students in their own class (no admin required)
+router.get('/my-class-students', authenticateToken, async (req, res) => {
+  try {
+    const classId = req.user.class_group_id
+    if (!classId) return res.json([])
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, username, full_name, email, is_active, last_login, class_group_id')
+      .eq('class_group_id', classId)
+      .eq('role', 'student')
+      .order('full_name')
+    if (error) throw error
+    res.json(data || [])
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch class students' })
+  }
+})
+
 router.get('/class-groups', authenticateToken, async (req, res) => {
   try {
     const { data, error } = await supabase
