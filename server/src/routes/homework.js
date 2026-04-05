@@ -6,6 +6,7 @@ import supabase from '../db/supabase.js'
 import { getSignedUrl } from '../services/storage.js'
 import { sendPushToClass } from '../services/fcm.js'
 import { sendParentEmailForHomework } from '../services/email.js'
+import { logAuditEvent } from '../services/audit.js'
 
 const router = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
@@ -25,7 +26,26 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const { data, error } = await query.order('created_at', { ascending: false })
     if (error) throw error
-    res.json(data || [])
+    const homeworkIds = (data || []).map((item) => item.id)
+    let submissions = []
+    if (homeworkIds.length) {
+      const { data: submissionData } = await supabase
+        .from('homework_submissions')
+        .select('homework_id, student_id, marks_obtained, submitted_at')
+        .in('homework_id', homeworkIds)
+      submissions = submissionData || []
+    }
+    const submissionMap = submissions.reduce((acc, row) => {
+      if (!acc[row.homework_id]) acc[row.homework_id] = { submitted_count: 0, checked_count: 0, late_count: 0 }
+      acc[row.homework_id].submitted_count += 1
+      if (row.marks_obtained !== null && row.marks_obtained !== undefined) acc[row.homework_id].checked_count += 1
+      return acc
+    }, {})
+    res.json((data || []).map((item) => ({
+      ...item,
+      submitted_count: submissionMap[item.id]?.submitted_count || 0,
+      checked_count: submissionMap[item.id]?.checked_count || 0
+    })))
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Failed to fetch homework' })
@@ -80,7 +100,14 @@ router.get('/:id/submissions', authenticateToken, requireRole('teacher', 'admin'
       full_name: s.full_name,
       username: s.username,
       submitted: !!submissionMap[s.id],
-      submission: submissionMap[s.id] || null
+      submission: submissionMap[s.id]
+        ? {
+            ...submissionMap[s.id],
+            is_late: submissionMap[s.id]?.submitted_at
+              ? new Date(submissionMap[s.id].submitted_at) > new Date(hw.due_date)
+              : false
+          }
+        : null
     }))
 
     res.json(result)
@@ -121,6 +148,14 @@ router.post('/:id/submit', authenticateToken, requireRole('student'), async (req
         .eq('id', existing.id)
         .select().single()
       if (error) throw error
+      await logAuditEvent({
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        action: 'submit',
+        entityType: 'homework',
+        entityId: req.params.id,
+        details: { update: true }
+      })
       return res.json(data)
     }
 
@@ -130,6 +165,13 @@ router.post('/:id/submit', authenticateToken, requireRole('student'), async (req
       text_response
     }).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'submit',
+      entityType: 'homework',
+      entityId: req.params.id
+    })
     res.status(201).json(data)
   } catch (err) {
     console.error(err)
@@ -140,13 +182,25 @@ router.post('/:id/submit', authenticateToken, requireRole('student'), async (req
 // PATCH grade a submission (teacher/admin)
 router.patch('/:id/submissions/:studentId/grade', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    const { marks_obtained } = req.body
+    const { marks_obtained, teacher_remark } = req.body
     const { data, error } = await supabase.from('homework_submissions')
-      .update({ marks_obtained: parseFloat(marks_obtained), graded_by: req.user.id, graded_at: new Date().toISOString() })
+      .update({
+        marks_obtained: parseFloat(marks_obtained),
+        teacher_remark: teacher_remark || null,
+        graded_by: req.user.id,
+        graded_at: new Date().toISOString()
+      })
       .eq('homework_id', req.params.id)
       .eq('student_id', req.params.studentId)
       .select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'grade',
+      entityType: 'homework_submission',
+      entityId: data.id
+    })
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to grade submission' })
@@ -175,6 +229,14 @@ router.post('/', authenticateToken, requireRole('teacher', 'admin'), upload.sing
       category: category || 'Homework'
     }).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'create',
+      entityType: 'homework',
+      entityId: hw.id,
+      details: { title, type, class_group_id }
+    })
 
     if (type === 'quiz' && questions) {
       const parsed = JSON.parse(questions)
@@ -213,6 +275,14 @@ router.patch('/:id', authenticateToken, requireRole('teacher', 'admin'), async (
 
     const { data, error } = await supabase.from('homework').update(updates).eq('id', req.params.id).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'update',
+      entityType: 'homework',
+      entityId: req.params.id,
+      details: updates
+    })
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to update homework' })
@@ -227,6 +297,13 @@ router.delete('/:id', authenticateToken, requireRole('teacher', 'admin'), async 
     if (hw.created_by !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' })
     const { error } = await supabase.from('homework').delete().eq('id', req.params.id)
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'delete',
+      entityType: 'homework',
+      entityId: req.params.id
+    })
     res.json({ message: 'Homework deleted' })
   } catch {
     res.status(500).json({ error: 'Failed to delete homework' })

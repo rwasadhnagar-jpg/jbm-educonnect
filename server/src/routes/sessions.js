@@ -4,13 +4,14 @@ import { requireRole } from '../middleware/role.js'
 import supabase from '../db/supabase.js'
 import { createJitsiRoom } from '../services/jitsi.js'
 import { sendPushToClass } from '../services/fcm.js'
+import { logAuditEvent } from '../services/audit.js'
 
 const router = Router()
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { user } = req
-    let query = supabase.from('sessions').select('id, title, subject, start_time, end_time, status, class_group_id, teacher_id, notes')
+    let query = supabase.from('sessions').select('id, title, subject, start_time, end_time, status, class_group_id, teacher_id, notes, created_at')
 
     if (user.role === 'student' || user.role === 'parent') {
       const classGroupId = user.class_group_id ||
@@ -24,7 +25,25 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const { data, error } = await query.order('start_time', { ascending: true })
     if (error) throw error
-    res.json(data || [])
+    const sessionIds = (data || []).map((item) => item.id)
+    let joinCounts = []
+    if (sessionIds.length) {
+      const { data: joinData } = await supabase
+        .from('audit_logs')
+        .select('entity_id')
+        .eq('entity_type', 'session')
+        .eq('action', 'join')
+        .in('entity_id', sessionIds)
+      joinCounts = joinData || []
+    }
+    const joinMap = joinCounts.reduce((acc, row) => {
+      acc[row.entity_id] = (acc[row.entity_id] || 0) + 1
+      return acc
+    }, {})
+    res.json((data || []).map((item) => ({
+      ...item,
+      participant_count: joinMap[item.id] || 0
+    })))
   } catch {
     res.status(500).json({ error: 'Failed to fetch sessions' })
   }
@@ -54,6 +73,14 @@ router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req,
     }
 
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'create',
+      entityType: 'session',
+      entityId: data.id,
+      details: { title, class_group_id, start_time, end_time, subject: subject || null }
+    })
 
     sendPushToClass(class_group_id, `Session Scheduled: ${title}`, `Starts ${new Date(start_time).toLocaleString('en-IN')}`).catch(() => {})
     res.status(201).json(data)
@@ -72,6 +99,13 @@ router.patch('/:id/start', authenticateToken, requireRole('teacher', 'admin'), a
 
     const { data, error } = await supabase.from('sessions').update({ status: 'live' }).eq('id', req.params.id).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'start',
+      entityType: 'session',
+      entityId: req.params.id
+    })
 
     sendPushToClass(session.class_group_id, `Session is LIVE: ${session.title}`, 'Join now on JBM EduConnect!').catch(() => {})
     res.json(data)
@@ -89,6 +123,13 @@ router.patch('/:id/end', authenticateToken, requireRole('teacher', 'admin'), asy
 
     const { data, error } = await supabase.from('sessions').update({ status: 'ended' }).eq('id', req.params.id).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'end',
+      entityType: 'session',
+      entityId: req.params.id
+    })
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to end session' })
@@ -106,6 +147,13 @@ router.patch('/:id/notes', authenticateToken, requireRole('teacher', 'admin'), a
 
     const { data, error } = await supabase.from('sessions').update({ notes }).eq('id', req.params.id).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'update_notes',
+      entityType: 'session',
+      entityId: req.params.id
+    })
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to save notes' })
@@ -124,6 +172,13 @@ router.delete('/:id', authenticateToken, requireRole('teacher', 'admin'), async 
 
     const { error } = await supabase.from('sessions').delete().eq('id', req.params.id)
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'delete',
+      entityType: 'session',
+      entityId: req.params.id
+    })
     res.json({ message: 'Session deleted' })
   } catch {
     res.status(500).json({ error: 'Failed to delete session' })
@@ -180,6 +235,14 @@ router.post('/:id/attendance', authenticateToken, requireRole('teacher', 'admin'
     const { error } = await supabase.from('session_attendance')
       .upsert(rows, { onConflict: 'session_id,student_id' })
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'save_attendance',
+      entityType: 'session',
+      entityId: req.params.id,
+      details: { count: rows.length }
+    })
     res.json({ message: `Attendance saved for ${rows.length} students` })
   } catch (err) {
     console.error(err)
@@ -188,7 +251,7 @@ router.post('/:id/attendance', authenticateToken, requireRole('teacher', 'admin'
 })
 
 // POST join session
-router.post('/:id/join', authenticateToken, requireRole('student', 'teacher'), async (req, res) => {
+router.post('/:id/join', authenticateToken, requireRole('student', 'teacher', 'admin'), async (req, res) => {
   try {
     const { user } = req
     const { data: session, error } = await supabase
@@ -209,6 +272,13 @@ router.post('/:id/join', authenticateToken, requireRole('student', 'teacher'), a
     if (!session.meet_uri)
       return res.status(503).json({ error: 'Jitsi Meet link not available for this session' })
 
+    await logAuditEvent({
+      actorId: user.id,
+      actorRole: user.role,
+      action: 'join',
+      entityType: 'session',
+      entityId: session.id
+    })
     res.json({ meetUrl: session.meet_uri })
   } catch (err) {
     console.error(err)

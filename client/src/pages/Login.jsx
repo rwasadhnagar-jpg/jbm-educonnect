@@ -16,9 +16,10 @@ export default function Login() {
     setLoading(true)
     try {
       const user = await login(username.trim(), password)
-      if (user.role === 'student') navigate('/student')
+      if (user.must_change_password) navigate('/settings')
+      else if (user.role === 'student') navigate('/student')
       else if (user.role === 'teacher') navigate('/teacher')
-      else if (user.role === 'admin') navigate('/admin')
+      else if (user.role === 'admin' || user.role === 'sub_admin') navigate('/admin')
       else if (user.role === 'parent') navigate('/parent')
       else navigate('/')
     } catch (err) {

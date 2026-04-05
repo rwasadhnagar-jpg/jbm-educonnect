@@ -10,6 +10,7 @@ export default function HomeworkSubmissions() {
   const [loading, setLoading] = useState(true)
   const [savingGrade, setSavingGrade] = useState({})
   const [grades, setGrades] = useState({})
+  const [remarks, setRemarks] = useState({})
   const [selected, setSelected] = useState(null)
 
   useEffect(() => {
@@ -20,20 +21,51 @@ export default function HomeworkSubmissions() {
       setHw(hwRes.data)
       setSubmissions(subRes.data)
       const g = {}
-      subRes.data.forEach(s => { if (s.submission?.marks_obtained !== undefined && s.submission?.marks_obtained !== null) g[s.student_id] = s.submission.marks_obtained })
+      const r = {}
+      subRes.data.forEach(s => {
+        if (s.submission?.marks_obtained !== undefined && s.submission?.marks_obtained !== null) g[s.student_id] = s.submission.marks_obtained
+        if (s.submission?.teacher_remark) r[s.student_id] = s.submission.teacher_remark
+      })
       setGrades(g)
+      setRemarks(r)
     }).catch(() => {}).finally(() => setLoading(false))
   }, [id])
 
   const handleGrade = async (studentId) => {
     setSavingGrade(prev => ({ ...prev, [studentId]: true }))
     try {
-      await api.patch(`/api/homework/${id}/submissions/${studentId}/grade`, { marks_obtained: grades[studentId] })
+      await api.patch(`/api/homework/${id}/submissions/${studentId}/grade`, {
+        marks_obtained: grades[studentId],
+        teacher_remark: remarks[studentId] || ''
+      })
       setSubmissions(prev => prev.map(s => s.student_id === studentId
-        ? { ...s, submission: { ...s.submission, marks_obtained: grades[studentId] } }
+        ? { ...s, submission: { ...s.submission, marks_obtained: grades[studentId], teacher_remark: remarks[studentId] || null } }
         : s))
     } catch { alert('Failed to save grade') }
     finally { setSavingGrade(prev => ({ ...prev, [studentId]: false })) }
+  }
+
+  const exportReport = () => {
+    const rows = submissions.map((s) => ({
+      Student: s.full_name,
+      Username: s.username,
+      Status: s.submitted ? 'Submitted' : 'Pending',
+      Late: s.submission?.is_late ? 'Yes' : 'No',
+      Marks: s.submission?.marks_obtained ?? '',
+      Remark: s.submission?.teacher_remark || '',
+      SubmittedAt: s.submission?.submitted_at ? new Date(s.submission.submitted_at).toLocaleString('en-IN') : ''
+    }))
+    const csv = [
+      Object.keys(rows[0] || {}).join(','),
+      ...rows.map((row) => Object.values(row).map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `homework-report-${id}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const submitted = submissions.filter(s => s.submitted).length
@@ -51,6 +83,11 @@ export default function HomeworkSubmissions() {
           {hw?.max_marks && <span className="mr-3">Max: {hw.max_marks} marks</span>}
           Due: {hw?.due_date && new Date(hw.due_date).toLocaleDateString('en-IN')}
         </p>
+      </div>
+      <div className="mb-4 flex justify-end">
+        <button onClick={exportReport} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-textMain hover:bg-gray-50">
+          Export Report
+        </button>
       </div>
 
       {/* Summary */}
@@ -97,25 +134,36 @@ export default function HomeworkSubmissions() {
                 {s.submitted && s.submission?.submitted_at && (
                   <p className="text-xs text-muted mt-1 pl-4">{new Date(s.submission.submitted_at).toLocaleString('en-IN')}</p>
                 )}
+                {s.submission?.is_late && (
+                  <p className="text-xs text-orange-600 pl-4 mt-1 font-medium">Late submission</p>
+                )}
                 {!s.submitted && <p className="text-xs text-red-400 pl-4 mt-1">Not submitted</p>}
               </div>
               {s.submitted && hw?.max_marks && (
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex min-w-52 flex-col gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max={hw.max_marks}
+                      value={grades[s.student_id] ?? ''}
+                      onChange={e => setGrades(prev => ({ ...prev, [s.student_id]: e.target.value }))}
+                      placeholder="—"
+                      className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="text-xs text-muted">/ {hw.max_marks}</span>
+                  </div>
                   <input
-                    type="number"
-                    min="0"
-                    max={hw.max_marks}
-                    value={grades[s.student_id] ?? ''}
-                    onChange={e => setGrades(prev => ({ ...prev, [s.student_id]: e.target.value }))}
-                    placeholder="—"
-                    className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={remarks[s.student_id] ?? ''}
+                    onChange={(e) => setRemarks((prev) => ({ ...prev, [s.student_id]: e.target.value }))}
+                    placeholder="Teacher remark"
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                   />
-                  <span className="text-xs text-muted">/ {hw.max_marks}</span>
                   <button
                     onClick={() => handleGrade(s.student_id)}
                     disabled={savingGrade[s.student_id]}
                     className="text-xs bg-primary text-white px-2 py-1 rounded-lg hover:bg-blue-700 disabled:opacity-60">
-                    {savingGrade[s.student_id] ? '...' : 'Save'}
+                    {savingGrade[s.student_id] ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               )}

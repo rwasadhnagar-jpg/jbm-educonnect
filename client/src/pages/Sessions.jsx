@@ -1,8 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import api from '../api/client'
-import SessionCard from '../components/SessionCard'
 import JitsiEmbed from '../components/JitsiMeet'
 import { useAuth } from '../context/AuthContext'
+
+function statusBadgeClass(status) {
+  if (status === 'live') return 'bg-green-100 text-green-800'
+  if (status === 'scheduled') return 'bg-yellow-100 text-yellow-800'
+  if (status === 'ended') return 'bg-gray-100 text-gray-600'
+  return 'bg-blue-100 text-blue-700'
+}
 
 export default function Sessions() {
   const { user } = useAuth()
@@ -20,7 +26,7 @@ export default function Sessions() {
   useEffect(() => {
     api.get('/api/sessions')
       .then(({ data }) => setSessions(data))
-      .catch(() => setError('Failed to load sessions.'))
+      .catch(() => setError('Failed to load sessions. Please retry.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -35,26 +41,32 @@ export default function Sessions() {
 
   const handleStartSession = async (sessionId) => {
     try {
-      await api.patch(`/api/sessions/${sessionId}/start`)
-      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'live' } : s))
-    } catch { alert('Failed to start session.') }
+      const { data } = await api.patch(`/api/sessions/${sessionId}/start`)
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s)))
+    } catch {
+      alert('Failed to start session.')
+    }
   }
 
   const handleEndSession = async (sessionId) => {
     if (!confirm('End this session?')) return
     try {
-      await api.patch(`/api/sessions/${sessionId}/end`)
-      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'ended' } : s))
+      const { data } = await api.patch(`/api/sessions/${sessionId}/end`)
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s)))
       if (activeSession) setActiveSession(null)
-    } catch { alert('Failed to end session.') }
+    } catch {
+      alert('Failed to end session.')
+    }
   }
 
   const handleDeleteSession = async (sessionId) => {
     if (!confirm('Delete this session? This cannot be undone.')) return
     try {
       await api.delete(`/api/sessions/${sessionId}`)
-      setSessions(prev => prev.filter(s => s.id !== sessionId))
-    } catch (e) { alert(e.response?.data?.error || 'Failed to delete session.') }
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId))
+    } catch (e) {
+      alert(e.response?.data?.error || 'Failed to delete session.')
+    }
   }
 
   const openNotes = (session) => {
@@ -66,10 +78,13 @@ export default function Sessions() {
     setSavingNotes(true)
     try {
       await api.patch(`/api/sessions/${notesSession.id}/notes`, { notes: notesText })
-      setSessions(prev => prev.map(s => s.id === notesSession.id ? { ...s, notes: notesText } : s))
+      setSessions((prev) => prev.map((s) => (s.id === notesSession.id ? { ...s, notes: notesText } : s)))
       setNotesSession(null)
-    } catch { alert('Failed to save notes.') }
-    finally { setSavingNotes(false) }
+    } catch {
+      alert('Failed to save notes.')
+    } finally {
+      setSavingNotes(false)
+    }
   }
 
   const openAttendance = async (session) => {
@@ -77,29 +92,38 @@ export default function Sessions() {
       const { data } = await api.get(`/api/sessions/${session.id}/attendance`)
       setAttendanceData(data)
       setAttendanceSession(session)
-    } catch { alert('Failed to load attendance.') }
+    } catch {
+      alert('Failed to load attendance.')
+    }
   }
 
   const toggleAttendance = (studentId) => {
-    setAttendanceData(prev => prev.map(s => s.student_id === studentId ? { ...s, status: s.status === 'present' ? 'absent' : 'present' } : s))
+    setAttendanceData((prev) => prev.map((s) => (
+      s.student_id === studentId ? { ...s, status: s.status === 'present' ? 'absent' : 'present' } : s
+    )))
   }
 
   const saveAttendance = async () => {
     setSavingAtt(true)
     try {
       await api.post(`/api/sessions/${attendanceSession.id}/attendance`, {
-        attendance: attendanceData.map(s => ({ student_id: s.student_id, status: s.status }))
+        attendance: attendanceData.map((s) => ({ student_id: s.student_id, status: s.status }))
       })
       alert('Attendance saved!')
       setAttendanceSession(null)
-    } catch { alert('Failed to save attendance.') }
-    finally { setSavingAtt(false) }
+    } catch {
+      alert('Failed to save attendance.')
+    } finally {
+      setSavingAtt(false)
+    }
   }
 
   const isTeacher = user?.role === 'teacher'
+  const isAdmin = user?.role === 'admin' || user?.role === 'sub_admin'
+  const canModerate = isTeacher || isAdmin
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="max-w-3xl mx-auto px-4 py-6">
       {activeSession && (
         <JitsiEmbed
           meetUrl={activeSession.meetUrl}
@@ -109,12 +133,22 @@ export default function Sessions() {
         />
       )}
 
-      <h2 className="text-2xl font-bold text-textMain mb-6">Video Sessions</h2>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-textMain">Video Sessions</h2>
+          <p className="text-sm text-muted">Live classes, attendance, notes, and monitoring.</p>
+        </div>
+      </div>
 
       {loading && <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}
-      {error && <div className="bg-red-50 text-danger text-sm rounded-lg p-4 text-center">{error}</div>}
+      {error && (
+        <div className="bg-red-50 text-danger text-sm rounded-lg p-4 text-center">
+          {error}
+          <button onClick={() => window.location.reload()} className="ml-2 underline">Retry</button>
+        </div>
+      )}
       {!loading && !error && sessions.length === 0 && (
-        <div className="text-center py-12 text-muted">
+        <div className="text-center py-12 text-muted bg-white rounded-xl border border-gray-100">
           <p className="text-4xl mb-3">📹</p>
           <p>No sessions scheduled yet.</p>
         </div>
@@ -123,33 +157,40 @@ export default function Sessions() {
       <div className="space-y-3">
         {sessions.map((s) => (
           <div key={s.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="min-w-0">
                 <h3 className="font-semibold text-textMain">{s.title}</h3>
-                {s.subject && <span className="inline-block text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full mt-1 mr-2">{s.subject}</span>}
-                <p className="text-sm text-muted mt-1">{new Date(s.start_time).toLocaleString('en-IN')} – {new Date(s.end_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {s.subject && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{s.subject}</span>}
+                  {typeof s.participant_count === 'number' && (
+                    <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                      {s.participant_count} joined
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted mt-1">
+                  {new Date(s.start_time).toLocaleString('en-IN')} to {new Date(s.end_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </p>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${s.status === 'live' ? 'bg-green-100 text-green-800' : s.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'}`}>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${statusBadgeClass(s.status)}`}>
                 {s.status.toUpperCase()}
               </span>
             </div>
 
             {s.notes && (
               <div className="bg-gray-50 rounded-lg p-2 mb-2">
-                <p className="text-xs text-muted font-medium mb-1">Session Notes:</p>
+                <p className="text-xs text-muted font-medium mb-1">Session Notes</p>
                 <p className="text-xs text-textMain">{s.notes}</p>
               </div>
             )}
 
-            {/* Student join button */}
-            {s.status === 'live' && user?.role !== 'parent' && !isTeacher && (
+            {s.status === 'live' && user?.role !== 'parent' && !canModerate && (
               <button onClick={() => handleJoin(s.id)} className="w-full bg-primary text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
                 Join Session
               </button>
             )}
 
-            {/* Teacher controls */}
-            {isTeacher && (
+            {canModerate && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {s.status === 'scheduled' && (
                   <button onClick={() => handleStartSession(s.id)} className="flex-1 bg-success text-white py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
@@ -159,7 +200,7 @@ export default function Sessions() {
                 {s.status === 'live' && (
                   <>
                     <button onClick={() => handleJoin(s.id)} className="flex-1 bg-primary text-white py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-                      Join
+                      {isAdmin ? 'Monitor' : 'Join'}
                     </button>
                     <button onClick={() => handleEndSession(s.id)} className="flex-1 bg-red-500 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors">
                       End
@@ -185,14 +226,13 @@ export default function Sessions() {
         ))}
       </div>
 
-      {/* Notes Modal */}
       {notesSession && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
-            <h3 className="font-bold text-lg text-textMain mb-4">Session Notes — {notesSession.title}</h3>
+            <h3 className="font-bold text-lg text-textMain mb-4">Session Notes - {notesSession.title}</h3>
             <textarea
               value={notesText}
-              onChange={e => setNotesText(e.target.value)}
+              onChange={(e) => setNotesText(e.target.value)}
               rows={6}
               placeholder="Write session notes, topics covered, homework given..."
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
@@ -205,16 +245,15 @@ export default function Sessions() {
         </div>
       )}
 
-      {/* Attendance Modal */}
       {attendanceSession && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[80vh]">
             <div className="p-6 pb-3">
-              <h3 className="font-bold text-lg text-textMain">Attendance — {attendanceSession.title}</h3>
-              <p className="text-xs text-muted mt-1">Tap to toggle present/absent</p>
+              <h3 className="font-bold text-lg text-textMain">Attendance - {attendanceSession.title}</h3>
+              <p className="text-xs text-muted mt-1">Tap to toggle present or absent</p>
               <div className="flex justify-between text-xs mt-2 font-medium">
-                <span className="text-success">{attendanceData.filter(s => s.status === 'present').length} Present</span>
-                <span className="text-danger">{attendanceData.filter(s => s.status === 'absent').length} Absent</span>
+                <span className="text-success">{attendanceData.filter((s) => s.status === 'present').length} Present</span>
+                <span className="text-danger">{attendanceData.filter((s) => s.status === 'absent').length} Absent</span>
               </div>
             </div>
             <div className="overflow-y-auto px-6 pb-2 flex-1">
@@ -222,12 +261,15 @@ export default function Sessions() {
                 <p className="text-muted text-sm text-center py-4">No students found in this class.</p>
               ) : (
                 <div className="space-y-2">
-                  {attendanceData.map(s => (
-                    <button key={s.student_id} onClick={() => toggleAttendance(s.student_id)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${s.status === 'present' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                  {attendanceData.map((s) => (
+                    <button
+                      key={s.student_id}
+                      onClick={() => toggleAttendance(s.student_id)}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${s.status === 'present' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}
+                    >
                       <span className="text-sm font-medium text-textMain">{s.full_name}</span>
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${s.status === 'present' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'}`}>
-                        {s.status === 'present' ? '✓ Present' : '✗ Absent'}
+                        {s.status === 'present' ? 'Present' : 'Absent'}
                       </span>
                     </button>
                   ))}

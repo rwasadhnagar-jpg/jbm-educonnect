@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, refreshProfile } = useAuth()
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -20,6 +20,7 @@ export default function Settings() {
         current_password: form.current_password,
         new_password: form.new_password
       })
+      await refreshProfile()
       setSuccess('Password changed successfully!')
       setForm({ current_password: '', new_password: '', confirm_password: '' })
     } catch (err) {
@@ -33,6 +34,11 @@ export default function Settings() {
     <div className="max-w-md mx-auto px-4 py-8">
       <h2 className="text-2xl font-bold text-textMain mb-2">Settings</h2>
       <p className="text-muted text-sm mb-6">Logged in as <span className="font-medium text-textMain">{user?.full_name}</span> ({user?.role})</p>
+      {user?.must_change_password && (
+        <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
+          Please change your password before continuing. This is required on first login or after an admin reset.
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h3 className="font-semibold text-textMain mb-4">Change Password</h3>

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authenticateToken } from '../middleware/auth.js'
 import { requireRole } from '../middleware/role.js'
 import supabase from '../db/supabase.js'
+import { logAuditEvent } from '../services/audit.js'
 
 const router = Router()
 
@@ -11,7 +12,8 @@ router.get('/', authenticateToken, async (req, res) => {
     const { user } = req
     let query = supabase
       .from('announcements')
-      .select('id, title, message, target_class_group_id, created_at, class_groups(name), users(full_name)')
+      .select('id, title, message, target_class_group_id, created_at, is_pinned, class_groups(name), users(full_name)')
+      .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
 
     if (user.role === 'student' || user.role === 'teacher') {
@@ -47,6 +49,13 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
     }).select().single()
 
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'create',
+      entityType: 'announcement',
+      entityId: data.id
+    })
     res.status(201).json(data)
   } catch {
     res.status(500).json({ error: 'Failed to create announcement' })
@@ -58,6 +67,13 @@ router.delete('/:id', authenticateToken, requireRole('admin'), async (req, res) 
   try {
     const { error } = await supabase.from('announcements').delete().eq('id', req.params.id)
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'delete',
+      entityType: 'announcement',
+      entityId: req.params.id
+    })
     res.json({ message: 'Deleted' })
   } catch {
     res.status(500).json({ error: 'Failed to delete announcement' })
@@ -74,6 +90,14 @@ router.patch('/:id', authenticateToken, requireRole('admin'), async (req, res) =
     if (is_pinned !== undefined) updates.is_pinned = is_pinned
     const { data, error } = await supabase.from('announcements').update(updates).eq('id', req.params.id).select().single()
     if (error) throw error
+    await logAuditEvent({
+      actorId: req.user.id,
+      actorRole: req.user.role,
+      action: 'update',
+      entityType: 'announcement',
+      entityId: req.params.id,
+      details: updates
+    })
     res.json(data)
   } catch {
     res.status(500).json({ error: 'Failed to update announcement' })

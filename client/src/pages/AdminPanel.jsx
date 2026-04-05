@@ -11,7 +11,7 @@ const NAV = [
   { id: 'sessions',      label: 'Session History',  icon: '🎥' },
   { id: 'live',          label: 'Live Monitor',     icon: '🔴' },
 ]
-const ROLES = ['student', 'teacher', 'parent', 'admin']
+const ROLES = ['student', 'teacher', 'parent', 'admin', 'sub_admin']
 
 export default function AdminPanel() {
   const [section, setSection] = useState('users')
@@ -20,6 +20,7 @@ export default function AdminPanel() {
   const [allSessions, setAllSessions] = useState([])
   const [allHomework, setAllHomework] = useState([])
   const [announcements, setAnnouncements] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // Users state
@@ -58,6 +59,7 @@ export default function AdminPanel() {
   const [annLoading, setAnnLoading] = useState(false)
   const [editAnn, setEditAnn] = useState(null)
   const [editAnnForm, setEditAnnForm] = useState({})
+  const [annSearch, setAnnSearch] = useState('')
 
   // Homework filters
   const [hwSearch, setHwSearch] = useState('')
@@ -91,13 +93,15 @@ export default function AdminPanel() {
       api.get('/api/users/class-groups'),
       api.get('/api/sessions'),
       api.get('/api/homework'),
-      api.get('/api/announcements').catch(() => ({ data: [] }))
-    ]).then(([u, cg, s, hw, ann]) => {
+      api.get('/api/announcements').catch(() => ({ data: [] })),
+      api.get('/api/users/reports/summary').catch(() => ({ data: null }))
+    ]).then(([u, cg, s, hw, ann, summaryRes]) => {
       setUsers(u.data || [])
       setClassGroups(cg.data || [])
       setAllSessions(s.data || [])
       setAllHomework(hw.data || [])
       setAnnouncements(ann.data || [])
+      setSummary(summaryRes.data)
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
@@ -125,6 +129,11 @@ export default function AdminPanel() {
     const matchClass = !sessClassFilter || s.class_group_id === sessClassFilter
     const matchStatus = !sessStatusFilter || s.status === sessStatusFilter
     return matchClass && matchStatus
+  })
+
+  const filteredAnnouncements = announcements.filter(a => {
+    const term = annSearch.toLowerCase()
+    return !annSearch || a.title?.toLowerCase().includes(term) || a.message?.toLowerCase().includes(term)
   })
 
   // ── User Actions ──
@@ -184,6 +193,30 @@ export default function AdminPanel() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Users')
     XLSX.writeFile(wb, `JBM_Users_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  const downloadFailures = () => {
+    if (!bulkResult?.failed?.length) return
+    const ws = XLSX.utils.json_to_sheet(bulkResult.failed)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Import Errors')
+    XLSX.writeFile(wb, `JBM_Bulk_Import_Errors_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  const exportHomeworkReport = () => {
+    const rows = filteredHomework.map(hw => ({
+      Title: hw.title,
+      Subject: hw.subject || '',
+      Class: className(hw.class_group_id),
+      Category: hw.category || hw.type,
+      DueDate: hw.due_date ? new Date(hw.due_date).toLocaleDateString('en-IN') : '',
+      Submitted: hw.submitted_count || 0,
+      Checked: hw.checked_count || 0
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Homework')
+    XLSX.writeFile(wb, `JBM_Homework_Report_${new Date().toISOString().slice(0,10)}.xlsx`)
   }
 
   const handlePromote = async () => {
@@ -429,11 +462,32 @@ export default function AdminPanel() {
 
       {/* ── Main ── */}
       <main className="flex-1 px-8 py-6 overflow-auto">
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Students</p>
+            <p className="mt-2 text-2xl font-bold text-textMain">{summary?.totals?.students ?? users.filter(u => u.role === 'student').length}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Teachers</p>
+            <p className="mt-2 text-2xl font-bold text-textMain">{summary?.totals?.teachers ?? users.filter(u => u.role === 'teacher').length}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Live Classes</p>
+            <p className="mt-2 text-2xl font-bold text-red-600">{summary?.totals?.liveClasses ?? liveCount}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Pending Homework</p>
+            <p className="mt-2 text-2xl font-bold text-blue-700">{summary?.totals?.pendingHomework ?? 0}</p>
+          </div>
+        </div>
 
         {/* ══ USERS ══ */}
         {section === 'users' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold text-textMain">Users <span className="text-muted font-normal text-base">({users.length} total)</span></h2>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-xl font-bold text-textMain">Users <span className="text-muted font-normal text-base">({users.length} total)</span></h2>
+              <button onClick={handleExportUsers} className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold hover:bg-gray-50">Export Users</button>
+            </div>
 
             {/* Create */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
@@ -733,7 +787,10 @@ export default function AdminPanel() {
                 </div>
                 {bulkResult.failed.length > 0 && (
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                    <p className="text-danger font-semibold text-sm mb-2">{bulkResult.failed.length} failed:</p>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-danger font-semibold text-sm">{bulkResult.failed.length} failed:</p>
+                      <button onClick={downloadFailures} className="text-xs font-semibold text-danger underline">Download error report</button>
+                    </div>
                     <ul className="text-xs text-danger space-y-1">{bulkResult.failed.map((f, i) => <li key={i}>{f.username}: {f.reason}</li>)}</ul>
                   </div>
                 )}
@@ -746,6 +803,9 @@ export default function AdminPanel() {
         {section === 'announcements' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-textMain">Announcements</h2>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+              <input className={inp} placeholder="Search announcements..." value={annSearch} onChange={e => setAnnSearch(e.target.value)} />
+            </div>
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <h3 className="font-semibold mb-4">Create Announcement</h3>
               <form onSubmit={handleCreateAnnouncement} className="space-y-3">
@@ -761,8 +821,8 @@ export default function AdminPanel() {
               </form>
             </div>
             <div className="space-y-3">
-              {announcements.length === 0 && <p className="text-muted text-sm text-center py-8">No announcements yet.</p>}
-              {[...announcements].sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0)).map(a => (
+              {filteredAnnouncements.length === 0 && <p className="text-muted text-sm text-center py-8">No announcements yet.</p>}
+              {[...filteredAnnouncements].sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0)).map(a => (
                 <div key={a.id} className={`bg-white rounded-xl border shadow-sm p-4 ${a.is_pinned ? 'border-yellow-200' : 'border-gray-100'}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">

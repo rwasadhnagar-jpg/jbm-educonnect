@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import supabase from '../db/supabase.js'
 import { authenticateToken } from '../middleware/auth.js'
+import { logAuditEvent } from '../services/audit.js'
 
 const router = Router()
 
@@ -13,11 +14,12 @@ router.post('/login', async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, username, password_hash, role, full_name, email, class_group_id, school_id')
+      .select('id, username, password_hash, role, full_name, email, class_group_id, school_id, is_active, must_change_password')
       .eq('username', username.trim().toLowerCase())
       .single()
 
     if (error || !user) return res.status(401).json({ error: 'Invalid username or password' })
+    if (user.is_active === false) return res.status(403).json({ error: 'This account is inactive. Contact the school administrator.' })
 
     const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) return res.status(401).json({ error: 'Invalid username or password' })
@@ -32,11 +34,20 @@ router.post('/login', async (req, res) => {
       full_name: user.full_name,
       email: user.email,
       class_group_id: user.class_group_id,
-      school_id: user.school_id
+      school_id: user.school_id,
+      must_change_password: !!user.must_change_password
     }
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' })
     const refreshToken = jwt.sign({ id: user.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: '30d' })
+
+    await logAuditEvent({
+      actorId: user.id,
+      actorRole: user.role,
+      action: 'login',
+      entityType: 'user',
+      entityId: user.id
+    })
 
     res.json({ token, refreshToken, user: payload })
   } catch (err) {
@@ -64,7 +75,7 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, username, role, full_name, email, class_group_id, school_id, is_active')
+      .select('id, username, role, full_name, email, class_group_id, school_id, is_active, must_change_password')
       .eq('id', req.user.id)
       .single()
     if (error || !user) return res.status(404).json({ error: 'User not found' })

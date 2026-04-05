@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
   school_id         UUID REFERENCES schools(id) ON DELETE SET NULL,
   username          TEXT NOT NULL UNIQUE,
   password_hash     TEXT NOT NULL,
-  role              TEXT NOT NULL CHECK (role IN ('student','teacher','admin','parent')),
+  role              TEXT NOT NULL CHECK (role IN ('student','teacher','admin','sub_admin','parent')),
   full_name         TEXT NOT NULL,
   email             TEXT,
   class_group_id    UUID REFERENCES class_groups(id) ON DELETE SET NULL,
@@ -207,5 +207,19 @@ CREATE INDEX IF NOT EXISTS idx_attendance_student ON session_attendance(student_
 
 -- Additional columns for existing tables
 ALTER TABLE users    ADD COLUMN IF NOT EXISTS last_login  TIMESTAMPTZ;
+ALTER TABLE users    ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS notes       TEXT;
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS teacher_remark TEXT;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  actor_role TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id UUID,
+  details JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

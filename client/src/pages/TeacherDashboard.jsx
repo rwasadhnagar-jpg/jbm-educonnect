@@ -10,6 +10,8 @@ export default function TeacherDashboard() {
   const [sessions, setSessions] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [students, setStudents] = useState([])
+  const [pendingChecking, setPendingChecking] = useState(0)
+  const [submissionsDue, setSubmissionsDue] = useState(0)
   const [loading, setLoading] = useState(true)
   const [editHw, setEditHw] = useState(null)
   const [editForm, setEditForm] = useState({})
@@ -22,17 +24,25 @@ export default function TeacherDashboard() {
       api.get('/api/announcements').catch(() => ({ data: [] })),
       api.get('/api/users/my-class-students').catch(() => ({ data: [] }))
     ]).then(([hw, sess, ann, studs]) => {
-      setHomework(hw.data || [])
+      const homeworkRows = hw.data || []
+      setHomework(homeworkRows)
       setSessions(sess.data || [])
       setAnnouncements((ann.data || []).slice(0, 3))
       setStudents(studs.data || [])
+      return Promise.all(
+        homeworkRows.map((item) => api.get(`/api/homework/${item.id}/submissions`).then((res) => ({ id: item.id, data: res.data })).catch(() => ({ id: item.id, data: [] })))
+      )
+    }).then((submissionSets = []) => {
+      const pending = submissionSets.reduce((acc, item) => acc + item.data.filter((row) => row.submitted && (row.submission?.marks_obtained === null || row.submission?.marks_obtained === undefined)).length, 0)
+      const due = submissionSets.reduce((acc, item) => acc + item.data.filter((row) => !row.submitted).length, 0)
+      setPendingChecking(pending)
+      setSubmissionsDue(due)
     }).catch(() => {}).finally(() => setLoading(false))
   }, [user])
 
   const upcomingSessions = sessions.filter(s => s.status !== 'ended').slice(0, 3)
   const today = new Date().toDateString()
   const todaySessions = sessions.filter(s => new Date(s.start_time).toDateString() === today)
-  const overduePending = homework.filter(hw => new Date(hw.due_date) < new Date()).length
 
   const handleDeleteHw = async (id) => {
     if (!confirm('Delete this homework?')) return
@@ -60,7 +70,7 @@ export default function TeacherDashboard() {
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="max-w-3xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-textMain">Teacher Dashboard</h2>
@@ -68,7 +78,7 @@ export default function TeacherDashboard() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <div className="bg-blue-50 rounded-xl p-3 text-center">
           <p className="text-2xl font-bold text-primary">{students.length || '—'}</p>
           <p className="text-xs text-muted mt-1">My Students</p>
@@ -80,6 +90,24 @@ export default function TeacherDashboard() {
         <div className="bg-orange-50 rounded-xl p-3 text-center">
           <p className="text-2xl font-bold text-orange-500">{homework.length}</p>
           <p className="text-xs text-muted mt-1">Assignments</p>
+        </div>
+        <div className="bg-purple-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-purple-600">{pendingChecking}</p>
+          <p className="text-xs text-muted mt-1">Pending Checking</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="rounded-xl border border-gray-100 bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Submissions Due</p>
+          <p className="mt-2 text-2xl font-bold text-textMain">{submissionsDue}</p>
+          <p className="text-xs text-muted mt-1">Students still yet to submit work</p>
+        </div>
+        <div className="rounded-xl border border-gray-100 bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Quick Focus</p>
+          <p className="mt-2 text-sm text-textMain">
+            {pendingChecking > 0 ? `${pendingChecking} submissions need marks or remarks.` : 'All submitted work has been checked.'}
+          </p>
         </div>
       </div>
 
@@ -140,7 +168,9 @@ export default function TeacherDashboard() {
       <div>
         <h3 className="font-semibold text-textMain mb-3">Your Assignments</h3>
         {homework.length === 0 ? (
-          <p className="text-muted text-sm text-center py-8">No homework assigned yet.</p>
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white px-4 py-8 text-center text-sm text-muted">
+            No homework assigned yet. Use "Assign Homework" above to create the first assignment for your class.
+          </div>
         ) : (
           <div className="space-y-3">
             {homework.map((hw) => (

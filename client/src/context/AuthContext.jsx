@@ -8,6 +8,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const refreshProfile = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return null
+    try {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      const decoded = jwtDecode(token)
+      const { data } = await api.get('/api/auth/me')
+      const mergedUser = { ...decoded, ...data }
+      setUser(mergedUser)
+      return mergedUser
+    } catch {
+      return null
+    }
+  }
+
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (token) {
@@ -15,10 +30,7 @@ export function AuthProvider({ children }) {
         const decoded = jwtDecode(token)
         if (decoded.exp * 1000 > Date.now()) {
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-          // Fetch fresh profile so class_group_id is always up-to-date
-          api.get('/api/auth/me')
-            .then(({ data }) => setUser({ ...decoded, ...data }))
-            .catch(() => setUser(decoded))
+          refreshProfile().catch(() => setUser(decoded))
             .finally(() => setLoading(false))
           return
         }
@@ -33,8 +45,9 @@ export function AuthProvider({ children }) {
     localStorage.setItem('token', data.token)
     api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     const decoded = jwtDecode(data.token)
-    setUser(decoded)
-    return decoded
+    const mergedUser = { ...decoded, ...(data.user || {}) }
+    setUser(mergedUser)
+    return mergedUser
   }
 
   const logout = () => {
@@ -43,7 +56,7 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, loading, login, logout, refreshProfile, setUser }}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => useContext(AuthContext)

@@ -11,6 +11,7 @@ export default function Navbar() {
     student: [{ to: '/student', label: 'Dashboard' }, { to: '/sessions', label: 'Sessions' }, { to: '/settings', label: 'Settings' }],
     teacher: [{ to: '/teacher', label: 'Dashboard' }, { to: '/sessions', label: 'Sessions' }, { to: '/homework/create', label: '+ Homework' }, { to: '/sessions/schedule', label: '+ Session' }, { to: '/my-class', label: 'My Class' }, { to: '/settings', label: 'Settings' }],
     admin: [{ to: '/admin', label: 'Admin Panel' }, { to: '/settings', label: 'Settings' }],
+    sub_admin: [{ to: '/admin', label: 'Admin Panel' }, { to: '/settings', label: 'Settings' }],
     parent: [{ to: '/parent', label: 'Dashboard' }, { to: '/settings', label: 'Settings' }]
   }
 
@@ -22,6 +23,11 @@ export default function Navbar() {
           <span className="font-bold text-lg tracking-tight">JBM EduConnect</span>
         </Link>
         <div className="flex items-center gap-4">
+          {user?.must_change_password && (
+            <span className="hidden md:inline text-xs bg-yellow-200 text-yellow-900 px-2 py-1 rounded-full font-semibold">
+              Change password required
+            </span>
+          )}
           {(links[user?.role] || []).map((l) => (
             <Link key={l.to} to={l.to} className="text-sm hover:text-blue-200 transition-colors">{l.label}</Link>
           ))}
