@@ -33,7 +33,7 @@ export default function Sessions() {
   const handleJoin = async (sessionId) => {
     try {
       const { data } = await api.post(`/api/sessions/${sessionId}/join`)
-      setActiveSession(data)
+      window.open(data.meetUrl, '_blank', 'noopener,noreferrer')
     } catch (e) {
       alert(e.response?.data?.error || 'Cannot join session right now.')
     }
