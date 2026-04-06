@@ -175,7 +175,11 @@ export default function AdminPanel() {
   const handleResetPassword = async (userId) => {
     const pwd = prompt('Enter new password (min 8 chars):')
     if (!pwd || pwd.length < 8) return alert('Password too short')
-    try { await api.patch(`/api/users/${userId}/password`, { password: pwd }); alert('Password reset.') }
+    try {
+      await api.patch(`/api/users/${userId}/password`, { password: pwd })
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, password_plain: pwd } : u))
+      alert('Password reset.')
+    }
     catch { alert('Failed to reset password') }
   }
 
@@ -183,6 +187,7 @@ export default function AdminPanel() {
     const rows = filteredUsers.map(u => ({
       'Full Name': u.full_name,
       'Username': u.username,
+      'Password': u.password_plain || '',
       'Role': u.role,
       'Class': u.class_group_name || '',
       'Email': u.email || '',

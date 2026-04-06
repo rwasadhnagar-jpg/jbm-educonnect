@@ -12,7 +12,7 @@ router.get('/', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, email, role, class_group_id, is_active, last_login, must_change_password, archived_at, class_groups(name)')
+      .select('id, username, full_name, email, role, class_group_id, is_active, last_login, must_change_password, archived_at, password_plain, class_groups(name)')
       .is('archived_at', null)
       .order('full_name')
     if (error) throw error
@@ -180,6 +180,7 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
       role,
       class_group_id: class_group_id || null,
       password_hash,
+      password_plain: password,
       school_id: school?.id,
       must_change_password: true
     }).select('id, username, full_name, email, role, class_group_id').single()
@@ -208,7 +209,7 @@ router.patch('/:id/password', authenticateToken, requireRole('admin'), async (re
     const { password } = req.body
     if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
     const password_hash = await bcrypt.hash(password, 12)
-    const { error } = await supabase.from('users').update({ password_hash, must_change_password: true }).eq('id', req.params.id)
+    const { error } = await supabase.from('users').update({ password_hash, password_plain: password, must_change_password: true }).eq('id', req.params.id)
     if (error) throw error
     await logAuditEvent({
       actorId: req.user.id,
@@ -288,6 +289,7 @@ router.post('/bulk', authenticateToken, requireRole('admin'), async (req, res) =
         continue
       }
 
+      const plainPwd = u.password && u.password.length >= 8 ? u.password : default_password
       const password_hash = u.password && u.password.length >= 8
         ? await bcrypt.hash(u.password, 12)
         : defaultHash
@@ -298,6 +300,7 @@ router.post('/bulk', authenticateToken, requireRole('admin'), async (req, res) =
         role: u.role,
         class_group_id: classGroupId,
         password_hash,
+        password_plain: plainPwd,
         school_id: school?.id,
         must_change_password: true
       }).select('id, username, full_name, role').single()
