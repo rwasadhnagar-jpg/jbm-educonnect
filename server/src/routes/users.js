@@ -203,27 +203,7 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
   }
 })
 
-router.patch('/:id/password', authenticateToken, requireRole('admin'), async (req, res) => {
-  try {
-    const { password } = req.body
-    if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
-    const password_hash = await bcrypt.hash(password, 12)
-    const { error } = await supabase.from('users').update({ password_hash, must_change_password: true }).eq('id', req.params.id)
-    if (error) throw error
-    await logAuditEvent({
-      actorId: req.user.id,
-      actorRole: req.user.role,
-      action: 'reset_password',
-      entityType: 'user',
-      entityId: req.params.id
-    })
-    res.json({ message: 'Password updated successfully' })
-  } catch {
-    res.status(500).json({ error: 'Failed to reset password' })
-  }
-})
-
-// Any logged-in user can change their own password
+// Any logged-in user can change their own password (must be BEFORE /:id/password)
 router.patch('/me/password', authenticateToken, async (req, res) => {
   try {
     const { current_password, new_password } = req.body
@@ -249,6 +229,21 @@ router.patch('/me/password', authenticateToken, async (req, res) => {
     res.json({ message: 'Password changed successfully' })
   } catch {
     res.status(500).json({ error: 'Failed to change password' })
+  }
+})
+
+// Admin resets another user's password
+router.patch('/:id/password', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { password } = req.body
+    if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    const password_hash = await bcrypt.hash(password, 12)
+    const { error } = await supabase.from('users').update({ password_hash, must_change_password: true }).eq('id', req.params.id)
+    if (error) throw error
+    await logAuditEvent({ actorId: req.user.id, actorRole: req.user.role, action: 'reset_password', entityType: 'user', entityId: req.params.id })
+    res.json({ message: 'Password updated successfully' })
+  } catch {
+    res.status(500).json({ error: 'Failed to reset password' })
   }
 })
 
