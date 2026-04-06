@@ -12,7 +12,7 @@ router.get('/', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, email, role, class_group_id, is_active, last_login, must_change_password, archived_at, password_plain, class_groups(name)')
+      .select('id, username, full_name, email, role, class_group_id, is_active, last_login, must_change_password, archived_at, class_groups(name)')
       .is('archived_at', null)
       .order('full_name')
     if (error) throw error
