@@ -4,7 +4,7 @@ import api from '../api/client'
 
 export default function ScheduleSession() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ title: '', subject: '', class_group_id: '', start_time: '', end_time: '' })
+  const [form, setForm] = useState({ title: '', subject: '', class_group_id: '', start_time: '', end_time: '', meet_url: '' })
   const [classGroups, setClassGroups] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -53,6 +53,13 @@ export default function ScheduleSession() {
             <option value="">Select subject...</option>
             {['Mathematics','Science','English','Hindi','Social Studies','Computer','Sanskrit','Art','Physical Education','GK'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Meeting Link <span className="text-muted font-normal">(Google Meet / Zoom — paste your link)</span></label>
+          <input type="url" value={form.meet_url} onChange={(e) => setForm({ ...form, meet_url: e.target.value })}
+            className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="https://meet.google.com/xxx-xxxx-xxx  or  https://zoom.us/j/..." />
+          <p className="text-xs text-muted mt-1">Leave blank to auto-generate a Jitsi room</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

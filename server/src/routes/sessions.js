@@ -51,26 +51,25 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.post('/', authenticateToken, requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    const { title, subject, class_group_id, start_time, end_time } = req.body
+    const { title, subject, class_group_id, start_time, end_time, meet_url } = req.body
     if (!title || !class_group_id || !start_time || !end_time)
       return res.status(400).json({ error: 'Missing required fields' })
     if (new Date(end_time) <= new Date(start_time))
       return res.status(400).json({ error: 'end_time must be after start_time' })
 
+    // Use teacher-provided link (Google Meet/Zoom) or fall back to Jitsi
+    const customUrl = meet_url && meet_url.startsWith('http') ? meet_url : null
+    const { meetUrl: jitsiUrl, roomName } = createJitsiRoom(Date.now().toString())
+    const finalMeetUrl = customUrl || jitsiUrl
+
     const { data, error } = await supabase.from('sessions').insert({
       title, subject: subject || null, class_group_id,
       teacher_id: req.user.id,
       start_time, end_time,
-      meet_uri: null, meet_space_name: null,
+      meet_uri: finalMeetUrl,
+      meet_space_name: customUrl ? null : roomName,
       status: 'scheduled'
     }).select().single()
-
-    if (!error && data) {
-      const { meetUrl, roomName } = createJitsiRoom(data.id)
-      await supabase.from('sessions').update({ meet_uri: meetUrl, meet_space_name: roomName }).eq('id', data.id)
-      data.meet_uri = meetUrl
-      data.meet_space_name = roomName
-    }
 
     if (error) throw error
     await logAuditEvent({
